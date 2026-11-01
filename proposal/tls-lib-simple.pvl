@@ -37,8 +37,8 @@ const G: element [data].
 
 fun dh_ideal(element,bitstring):element.
 equation forall x:bitstring, y:bitstring;
-	 dh_ideal(dh_ideal(G,x),y) =
-	 dh_ideal(dh_ideal(G,y),x).
+     dh_ideal(dh_ideal(G,x),y) =
+     dh_ideal(dh_ideal(G,y),x).
 
 (* Rewrite rules with "otherwise" are evaluated sequentially,
 i.e., first condition will be checked first and if satisfied, it returns its value.
@@ -153,6 +153,11 @@ event LeakedEK(pubkey).
 event LeakedLTK(pubkey).
 
 (********************************************************)
+(* LCA *)
+(********************************************************)
+event LeakedCA(pubkey).
+
+(********************************************************)
 (* PSK *)
 (********************************************************)
 type preSharedKey.
@@ -239,7 +244,6 @@ letfun kdf_ms(hs:bitstring, log3:bitstring) =  (* 1st parameter represents Hands
 letfun kdf_psk(ms:bitstring, log4:bitstring) =  (* 1st parameter represents Master Secret; 2nd parameter represents messages ClientHello...client Finished for derive_secret *)
        derive_secret(ms,tls13_resumption_master_secret,log4).  (* represents resumption_master_secret in the Key Schedule [Sec. 7.1, RFC8446] *)
 
-
 (********************************************************)
 (*  Message Formats, Session State *)
 (********************************************************)
@@ -264,8 +268,8 @@ fun nego(tls_typ,kex_alg,hash_alg,ev_typ): params [data].
 fun CH(random,params,random):msg [data].  (* ClientHello *)
 fun SH(random,params):msg [data].  (* ServerHello *)
 (* EncryptedExtensions msg not modelled *)
-(*  CRT(pubEK ,quote    ,selfsign ,ID_S    ,server_cert ) *)
-fun CRT(pubkey,bitstring,bitstring,identity,bitstring   ):msg [data].  (* Certificate message of TLS *)
+(*  CRT(ID_S    ,server_cert ) *)
+fun CRT(identity,bitstring   ):msg [data].  (* Certificate message of TLS *)
 fun CV(bitstring):msg [data].  (* CertificateVerify *)
 fun CV_Ext(bitstring,bitstring):msg [data].  (* Extended CertificateVerify *)
 fun FIN(bitstring):msg [data].  (* Finished *)
@@ -358,10 +362,10 @@ event ServerChoosesATLS(random,random,tls_typ).
 (* Old: PreServerFinished(cr,sr,psk,pubLTK,offer,mode,kc,ks,ems) *)
 (* New: PreServerFinishedWithID(ID,pubLTK,pubAK,psk,cr,sr,offer,mode,kc,ks,ems) *)
 event PreServerFinished(pubkey,
-			preSharedKey,
+            preSharedKey,
       random,random,
-			params,params,
-			ae_key,ae_key,bitstring).
+            params,params,
+            ae_key,ae_key,bitstring).
 event PreServerFinishedAliveness(identity). (* ID_S *)
 (* PreServerFin1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems) *)
 event PreServerFin1WayAgr(identity,
@@ -387,16 +391,16 @@ event PreServerFinRecentAgr(identity,identity,
       ae_key,ae_key,bitstring,
       random,random).
 event PreServerFinishedWithID(identity,pubkey,pubkey,
-			preSharedKey,
+            preSharedKey,
       random,random,
-			params,params,
-			ae_key,ae_key,bitstring).
+            params,params,
+            ae_key,ae_key,bitstring).
 (* New: PreServerFinishedWithBothPub(pubAK,psk,pubEK,cr,sr,offer,mode,kc,ks,ems) *)
 event PreServerFinishedWithBothPub(pubkey,preSharedKey,
       pubkey,
       random,random,
-			params,params,
-			ae_key,ae_key,bitstring).
+            params,params,
+            ae_key,ae_key,bitstring).
 (* PreServerComp represents a composition event with parameters from both RA and TLS *)
 (* PreServerComp(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr,pubEK,dev_state) *)
 event PreServerComp(identity,
@@ -418,8 +422,8 @@ event ServerRA2(pubkey,pubkey,bitstring).
 event ServerRAWithoutAK(pubkey,bitstring,bitstring).
 event ServerFinished(random,random,
                      preSharedKey, pubkey,
-		     params,params,
-		     ae_key,ae_key,bitstring,bitstring).
+             params,params,
+             ae_key,ae_key,bitstring,bitstring).
 
 event ServerStateEv(bitstring,bitstring).  (* quote,gxy *)
 event ServerStateEvKch(bitstring,ae_key).  (* quote,kch *)
@@ -451,174 +455,103 @@ free mesg:bitstring [private].
 (**********************************************************************)
 (* Sanity Checks (Reachability props): should all be false (confirms event is reachable) *)
 (**********************************************************************)
-(* should be false (confirms event is reachable) *)
-(* checks, for all terms ev, whether the event Accepted(ev) can occur. *)
-query ev:bitstring;
-      event(Accepted(ev)).
 
-(* should be false (confirms event is reachable) *)
-query log:bitstring;
-      event(Appraised(log)).
+query idS, idXS: identity, gxy:bitstring;
+  (* should be false (confirms both events are reachable)
+  i.e., there exists a trace where *both* ServerID and ClientID 
+  are reachable with a shared/common gxy *)
+  (event(ServerID(idS,gxy)) &&
+   event(ClientID(idXS,gxy)))
+.
 
-(* should be false (confirms event is reachable) *)
-query ev:bitstring;
-      event(ClientConn(ev)).
-
-(* should be false (confirms event is reachable) *)
-query cr:random, sr:random,
-      psk:preSharedKey, ID:identity,pubLTK:pubkey, e:element,
-      offer:params, mode:params,
-      kc:ae_key,ks:ae_key,ems:bitstring,rms:bitstring;
-      event(ClientFinished(pubLTK,psk,cr,sr,offer,mode,kc,ks,ems,rms)).
-
-query cr:random, sr:random,
-      psk:preSharedKey, ID_S:identity,ID_C:identity,pubLTK:pubkey,pubAK:pubkey, e:element,
-      offer:params, mode:params,
-      kc:ae_key,ks:ae_key,ems:bitstring,rms:bitstring;
-      event(ClientFinRecentAgr(ID_S,ID_C,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr)).
-
-(* should be false (confirms event is reachable) *)
 query cr:random, sr:random,
       psk:preSharedKey, p:pubkey, e:element,
-      offer:params, mode:params,
+      offer:params, mode:params, pubLTK:pubkey,
       kc:ae_key,ks:ae_key,ems:bitstring,rms:bitstring;
-      event(ServerFinished(cr,sr,psk,p,offer,mode,kc,ks,ems,rms)).
 
-(* should be false (confirms both events are reachable) 
-i.e., there exists a trace where *both* ServerID and ClientID 
-are reachable with a shared/common gxy *)
-query idS, idXS: identity, gxy:bitstring;  
-  (event(ServerID(idS,gxy)) &&
-   event(ClientID(idXS,gxy))).
-
-
-(* should be false (confirms event is reachable) *)
-(* query event(test4). *)
-
-(* should be false (confirms event is reachable) *)
- query rdata:bitstring;
-      event(AcceptedRdata(rdata)). 
-
-(* should be false (confirms events are reachable) 
-Goal: Events are reachable in the absence of an attacker.
-  An honest execution path for these events exists without any weakness (e.g.,leakage). 
-  Protocol can run without any attacker interference (exclude all weaknesses).
-Formalization: ServerLastEvent && ClientLastEvent ==> All weaknesses
-*)
-
-query pubEK:pubkey,dev_state:bitstring,quote:bitstring,
-      cr:random, sr:random, cr':random, sr':random,
-      ID:identity,pubLTK:pubkey,pubAK:pubkey,anyAK:pubkey,
-      psk:preSharedKey, e:element,
-      offer:params, mode:params, ID_S:identity,
-      kc:ae_key,ks:ae_key,ems:bitstring,rms:bitstring;
-  event(ClientFinished(pubLTK,psk,cr,sr,offer,mode,kc,ks,ems,rms)) &&
-  event(ServerFinished(cr,sr,psk,pubLTK,offer,mode,kc,ks,ems,rms)) ==>
-  event(ServerChoosesKEX(cr,sr,DHE_13(WeakDH,e))) ||
-  event(ServerChoosesHash(cr',sr',WeakHash)) ||
-  event(SentBadElement) ||
-  event(LeakedAK(pubAK)) ||
-  event(LeakedEK(pubEK)) ||
-  event(LeakedLTK(pubLTK))
+      (* should be false (confirms event is reachable) *)
+      event(ClientFinished(pubLTK,psk,cr,sr,offer,mode,kc,ks,ems,rms)) ==> false;
+      event(ServerFinished(cr,sr,psk,p,offer,mode,kc,ks,ems,rms)) ==> false
 .
 
+query cr,sr,cr',sr':random, psk:preSharedKey, ID_S:identity,
+      pubCA,pubLTK,pubEK,pubAK:pubkey, p:pubkey, e:element, offer,mode:params,
+      kc,ks:ae_key,ems,rms:bitstring;
 
-(* ClientComp and ServerComp with more parameters of agreement *)
-(* should be false (confirms events are reachable) *)
-query pubEK:pubkey,dev_state:bitstring,quote:bitstring,
-      cr:random, sr:random, cr':random, sr':random,
-      ID:identity,pubLTK:pubkey,pubAK:pubkey,anyAK:pubkey,
-      psk:preSharedKey, e:element,
-      offer:params, mode:params, ID_S:identity,
-      kc:ae_key,ks:ae_key,ems:bitstring,rms:bitstring;
-  event(ClientComp(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,dev_state)) &&
-  event(ServerComp(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr,pubEK,dev_state)) ==>
-  event(ServerChoosesKEX(cr,sr,DHE_13(WeakDH,e))) ||
-  event(ServerChoosesHash(cr',sr',WeakHash)) ||
-  event(SentBadElement) ||
-  event(LeakedAK(pubAK)) ||
-  event(LeakedEK(pubEK)) ||
-  event(LeakedLTK(pubLTK))
-.
+      (* should be false (confirms event is reachable) *)
+      event(ClientFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr)) &&
+      event(PreServerFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr)) ==> false
+    ;
 
+    (*
+    Goal: Events are reachable in the absence of an attacker.
+      An honest execution path for these events exists without any weakness (e.g.,leakage). 
+      Should be false (Protocol can run without any attacker interference (by excluding all weaknesses)).
+    Formalization: ClientFinished && ServerFinished ==> All weaknesses
+    *)
+      event(ClientFinished(pubLTK,psk,cr,sr,offer,mode,kc,ks,ems,rms)) &&
+      event(ServerFinished(cr,sr,psk,p,offer,mode,kc,ks,ems,rms)) ==>
+      event(ServerChoosesKEX(cr,sr,DHE_13(WeakDH,e))) ||
+      event(ServerChoosesHash(cr',sr',WeakHash)) ||
+      event(SentBadElement) ||
+      event(LeakedAK(pubAK)) ||
+      event(LeakedEK(pubEK)) ||
+      event(LeakedLTK(pubLTK)) ||
+      event(LeakedCA(pubCA))
+    ;
 
+    (*
+    Goal: Events are reachable in the absence of an attacker.
+      Should be false (Protocol can run without any attacker interference (by excluding all weaknesses)).
+    Formalization: ClientFinRecent1WayAgr && PreServerFinRecent1WayAgr ==> All weaknesses
+    *)
+      event(ClientFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr)) &&
+      event(PreServerFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr)) ==>
+      event(ServerChoosesKEX(cr,sr,DHE_13(WeakDH,e))) ||
+      event(ServerChoosesHash(cr',sr',WeakHash)) ||
+      event(SentBadElement) ||
+      event(LeakedAK(pubAK)) ||
+      event(LeakedEK(pubEK)) ||
+      event(LeakedLTK(pubLTK)) ||
+      event(LeakedCA(pubCA))
+    ;
 
-(**********************************************************************)
-(* Relay attacks queries *)
-(**********************************************************************)
+    (*
+    TLS-Ga: Recent One-way injective agreement
+    Counterexample without typical TLS 1.3 assumption of strong cryptography
+    Result: should be false (sanity check)
+    *)
+      inj-event(ClientFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr)) ==>
+      inj-event(PreServerFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr))
+    ;
 
-(* Reachability *)
-query ev:bitstring,gxy:bitstring;
-      event(ClientStateEv(ev,gxy)) &&
-      event(ServerStateEv(ev,gxy))
-.
+    (*
+    TLS-Gb: Recent One-way injective agreement
+    Additional parameters to One-way injective agreement: cr,sr
+    Adds agreement over nonces
+    Result: false without accounting for CA trust
+    *)
+      inj-event(ClientFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr)) ==>
+      inj-event(PreServerFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr)) ||
+      event(ServerChoosesKEX(cr,sr,DHE_13(WeakDH,e))) ||
+      event(ServerChoosesHash(cr',sr',WeakHash)) ||
+      event(SentBadElement) ||
+      event(LeakedLTK(pubLTK))
+    ;
 
-query ev:bitstring,kch:ae_key;
-      event(ClientStateEvKch(ev,kch)) &&
-      event(ServerStateEvKch(ev,kch))
-.
-
-query ev:bitstring,kc:ae_key;
-      event(ClientStateEvKc(ev,kc)) &&
-      event(ServerStateEvKc(ev,kc))
-.
-
-(**********************************************************************)
-(* Binding *)
-(*
-Goal G1: Binding Evidence to TLS session: Evidence should not be usable in
-  other TLS sessions, even if they are between the same endpoints.
-  (Not binding to endpoints because multiple sessions of endpoints are possible)
-3 levels of binding to TLS session: 
-  L1. gxy (gx,gy)
-  L2. kch (up to ServerHello)
-  L3. kc (up to ServerFinished): may include ID_S in Certificate message
-  L1 <= L2 <= L3
-Formalization: Same evidence is not accepted by two different TLS sessions.
-  TLS session identified by gxy. Trace should not contain:
-  Client(ev1,gxy1); Server(ev1,gxy2);
-  (* Informal: If they see the same evidence, they should be in the same session *)
-Parameters: Quote instead of dev_state
-  ds = ev, gxy
-  server identity not a part of the query because that is covered by G-C2
-Events: 
-  ServerStateEv after verifying CFin.
-  Rationale: Both endpoints have accepted the connection with the same evidence. 
-Result: true for Binder #3,5,7; and false otherwise
-*)
-query ev:bitstring,gxy1:bitstring,gxy2:bitstring,
- pubEK:pubkey,dev_state:bitstring,quote:bitstring,
-      cr:random, sr:random, cr':random, sr':random,
-      ID:identity,pubLTK:pubkey,pubAK:pubkey,
-      psk:preSharedKey, e:element,
-      offer:params, mode:params, ID_S:identity,
-      kc:ae_key,ks:ae_key,ems:bitstring,rms:bitstring;
-      event(ClientStateEv(ev,gxy1)) &&
-      event(ServerStateEv(ev,gxy2)) ==>
-      (gxy1 = gxy2)
-.
-
-
-(*
-Goal G2: Binding to client_write_key (kch) derived from handshake traffic secret (htsc) 
-Rationale: It has log_SH in addition to gxy
-Result: false for all except our proposed
-*)
-query ev:bitstring,kch1:ae_key,kch2:ae_key;
-      event(ClientStateEvKch(ev,kch1)) &&
-      event(ServerStateEvKch(ev,kch2)) ==>
-      (kch1 = kch2)
-.
-
-(* 
-Goal G3: w.r.t. client_write_key (kc) for application data derived from client_application_traffic_secret_0 (atsc) 
-Rationale: It has transcript hash up to log_SF (vs. log_SH in above property).
-Result: false
-*)
-query ev:bitstring,kc1:ae_key,kc2:ae_key;
-      event(ClientStateEvKc(ev,kc1)) &&
-      event(ServerStateEvKc(ev,kc2)) ==>
-      (kc1 = kc2)
+    (*
+    TLS-Gc: Recent One-way injective agreement
+    Additional parameters to One-way injective agreement: cr,sr
+    Adds agreement over nonces
+    Result: false without accounting for CA trust
+    *)
+      inj-event(ClientFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr)) ==>
+      inj-event(PreServerFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr)) ||
+      event(ServerChoosesKEX(cr,sr,DHE_13(WeakDH,e))) ||
+      event(ServerChoosesHash(cr',sr',WeakHash)) ||
+      event(SentBadElement) ||
+      event(LeakedLTK(pubLTK)) ||
+      event(LeakedCA(pubCA))
 .
 
 (********************************************************)
@@ -656,29 +589,15 @@ let Client(ID_C:identity,ID_S:identity,pubAK:pubkey,pubCA:pubkey) =
 
   let gxy = e2b(dh_exp(g,gy,x)) in  (* represents (EC)DHE in Key Derivation [Sec. 7.1, RFC8446] *)
   let (hs:bitstring,kch:ae_key,ksh:ae_key,kcm:mac_key,ksm:mac_key) = kdf_hs(es,gxy,log_SH) in
-  in(io,CRT(pubEK,quote,selfsign,=ID_S,server_cert));  (* receive Certificate message (Note: =ID_S can be removed) *)
+  in(io,CRT(ID_S,server_cert));  (* receive Certificate message (Note: =ID_S can be removed) *)
   let (id_pub_pair:bitstring, sig1:bitstring) = server_cert in  (* check server_cert format *)
-	let (=ID_S,pubLTK:pubkey) = id_pub_pair in  (* check signed data format *)
+    let (=ID_S,pubLTK:pubkey) = id_pub_pair in  (* check signed data format *)
   if verify(pubCA,id_pub_pair,sig1) = true then  (* check signatures on server_cert *)
+  let log_CRT = (log_SH,CRT(ID_S,server_cert)) in  (* after this step, log_CRT contains sent ClientHello || received ServerHello || received Certificate *)
 
-  let (dataSign:bitstring, sig:bitstring) = quote in  (* check quote format *)
-	let (rdata:bitstring,dev_status1:bitstring) = dataSign in  (* check dataSign format *)
-  if verify(pubAK,dataSign,sig) = true then  (* check signatures on Quote *)
-  if dev_status1 = dev_statusRef then  (*check measurements against Ref. Values *)
-  let cb = kdf_exp(hs,log_SH) in
-  if rdata = (ar,cb,pubEK) then (* rdata = ar || cb || pubEK *)
-  (* event Appraised(log_SH); *)
-  (* event AcceptedRdata(dev_status1); *)
-  let log_CRT = (log_SH,CRT(pubEK,quote,selfsign,ID_S,server_cert)) in  (* after this step, log_CRT contains sent ClientHello || received ServerHello || received Certificate *)
-
-  in(io,CV_Ext(s,s_LTK));  (* receive CertificateVerify message *)
-  if verify(pubEK,hash(shash_algo,log_CRT),s) = true then  (* log_CRT contains msgs up to Certificate *)
-  if verify(pubLTK,hash(shash_algo,log_CRT),s_LTK) = true then  (* log_CRT contains msgs up to Certificate *)
-  event Accepted(quote);
-  event Appraised(log_SH);
-  event AcceptedRdata(dev_status1);
-  event AcceptedWithPubEK(quote,pubEK);
-  let log_CV = (log_CRT,CV_Ext(s,s_LTK)) in  (* after this step, log_CV contains sent ClientHello || received ServerHello || received Certificate || received CertificateVerify *)
+  in(io,CV(sg_LTK));  (* receive CertificateVerify message *)
+  if verify(pubLTK,hash(shash_algo,log_CRT),sg_LTK) = true then  (* log_CRT contains msgs up to Certificate *)
+  let log_CV = (log_CRT,CV(sg_LTK)) in  (* after this step, log_CV contains sent ClientHello || received ServerHello || received Certificate || received CertificateVerify *)
 
   in(io,FIN(m1));  (* receive server Finished message containing hmac of log *)
   if m1 = hmac(StrongHash,ksm,log_CV) then    (* hmac(hash_alg,mac_key,bitstring); mac_key = ksm using Client's perspective of log_CV; that's why client needs to generate server keys also *)
@@ -694,19 +613,7 @@ let Client(ID_C:identity,ID_S:identity,pubAK:pubkey,pubCA:pubkey) =
     event ClientFin1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms);
     event ClientFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr);
     event ClientFinRecentAgr(ID_S,ID_C,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr);
-    event ClientFinishedWithID(ID_S,pubLTK,pubAK,psk,cr,sr,offer,mode,kc,ks,ems,rms);
-    event ClientFinishedWithBothPub(pubAK,psk,pubEK,cr,sr,offer,mode,kc,ks,ems,rms);
-    event ClientConn(quote);
-    event ClientComp(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,dev_status1);
-    event ClientRA(pubAK,pubEK,dev_status1,quote);
-    event ClientRA2(pubAK,pubEK,dev_status1);
-    event ClientRA3(pubAK,pubEK,dev_status1,ID_C);
-    event ClientRAWithoutAK(pubEK,dev_status1,quote);    
-    event ClientRANew(NULL_ID,NULL_pubkey,pubAK,pubEK,dev_status1,quote);
     event ClientID(ID_S,gxy);
-    event ClientStateEvKc(quote,kc);    
-    event ClientStateEvKch(quote,kch);
-    event ClientStateEv(quote,gxy);
     event ClientFinished(pubLTK,psk,cr,sr,offer,mode,kc,ks,ems,rms);
     (* insert clientSession(cr,sr,psk,offer,mode,kc,ks,ems,rms);  kc and ks are passed to appData via this table *)
     out(io,FIN(m2))  (* send ClientFinished message *)
@@ -750,65 +657,35 @@ let Server(ID_S:identity, privLTK: privkey, privAK: privkey, privEK: privkey,ID_
   let gxy = e2b(dh_exp(g,gx,y)) in  (* represents (EC)DHE in Key Derivation [Sec. 7.1, RFC8446] *)
   let (hs:bitstring,kch:ae_key,ksh:ae_key,kcm:mac_key,ksm:mac_key) = kdf_hs(es,gxy,log_SH) in
 
-  let pubEK = pk(privEK) in
   let pubLTK = pk(privLTK) in
-  let pubAK = pk(privAK) in
   event ServerID(ID_S,gxy);
 
-  (* Evidence generation *)
-  let cb = kdf_exp(hs,log_SH) in
-  let rdata = (ar,cb,pubEK) in (* Proposed binder = ar || cb || pubEK *)
-  (* model of dev_status (measurements): input from adversary *)
-  (* Lets the adversary instantiate any desired VM 
-      but only the one with correct measurements will be accepted at Verifier *)
-  (* Alternative model: generate using new, give to adversary and use tables to store *)
-	in(io, dev_status1: bitstring);
-  let dataSign = (rdata,dev_status1) in
-  let quote = (dataSign, sign(privAK,dataSign)) in
-  let selfsign = sign(privEK,(pubEK,quote)) in
-
-  event Conveyed(log_SH);
-  event Sent(quote);
-  event SentWithPubEK(quote,pubEK);
-  event SentRdata(dev_status1);
-  event ServerRA(ID_S,pubLTK,pubAK,pubEK,dev_status1,quote);  
-  event ServerRA2(pubAK,pubEK,dev_status1);
-  event ServerRAWithoutAK(pubEK,dev_status1,quote);
-  out(io,CRT(pubEK,quote,selfsign,ID_S,server_cert));  (* Send Certificate message *)
-  let log_CRT = (log_SH,CRT(pubEK,quote,selfsign,ID_S,server_cert)) in  (* received ClientHello || sent ServerHello || sent Certificate *)
+  out(io,CRT(ID_S,server_cert));  (* Send Certificate message *)
+  let log_CRT = (log_SH,CRT(ID_S,server_cert)) in  (* received ClientHello || sent ServerHello || sent Certificate *)
 
   (* CertificateVerify message *)
-  let sg     = sign(privEK ,hash(hash_algo,log_CRT)) in  (* A signature over the value Transcript-Hash(Handshake Context, Certificate) [Sec. 4.4, RFC8446] using LTK; Handshake Context via first row of table in Sec. 4.4 of RFC8446. log_CRT contains Handshake Context, Certificate. *)
   let sg_LTK = sign(privLTK,hash(hash_algo,log_CRT)) in  (* A signature over the value Transcript-Hash(Handshake Context, Certificate) [Sec. 4.4, RFC8446] using LTK; Handshake Context via first row of table in Sec. 4.4 of RFC8446. log_CRT contains Handshake Context, Certificate. *)
-  out(io,CV_Ext(sg,sg_LTK));  (* Send CertificateVerify message *)
-  let log_CV = (log_CRT,CV_Ext(sg,sg_LTK)) in  (* received ClientHello || sent ServerHello || sent Certificate || sent CertificateVerify *)
+  out(io,CV(sg_LTK));  (* Send CertificateVerify message *)
+  let log_CV = (log_CRT,CV(sg_LTK)) in  (* received ClientHello || sent ServerHello || sent Certificate || sent CertificateVerify *)
 
   (* serverFinished message *)
   let m1 = hmac(StrongHash,ksm,log_CV) in  (* A MAC over the value Transcript-Hash(Handshake Context, Certificate, CertificateVerify) using a MAC key derived from the Base Key [Sec. 4.4, RFC8446]. Handshake Context via first row of table in Sec. 4.4 of RFC8446. log_CV contains Handshake Context, Certificate, CertificateVerify  *)
   let log_SFIN = (log_CV,FIN(m1)) in  (* received ClientHello || sent ServerHello || sent Certificate || sent CertificateVerify || sent ServerFinished *)
   let (ms:bitstring,kc:ae_key,ks:ae_key,ems:bitstring) = kdf_ms(hs,log_SFIN) in  (* Key Derivation [Sec. 7.1, RFC8446] *)
-  event PreServerFinished(pubEK,psk,cr,sr,offer,mode,kc,ks,ems);
   event PreServerFinishedAliveness(ID_S);
   event PreServerFinishedWeakAgr(ID_S,ID_C);
   event PreServerFin1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems);
   event PreServerFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr);  
   event PreServerFinAgr(ID_S,ID_C,pubLTK,psk,offer,mode,kc,ks,ems);
   event PreServerFinRecentAgr(ID_S,ID_C,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr);
-  event PreServerFinishedWithID(ID_S,pubLTK,pubAK,psk,cr,sr,offer,mode,kc,ks,ems);
-  event PreServerFinishedWithBothPub(pubAK,psk,pubEK,cr,sr,offer,mode,kc,ks,ems);
-  event PreServerComp(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr,pubEK,dev_status1);  
   out(io,FIN(m1));  (* Send serverFinished message *)
 
   (* clientFinished message *)
   in(io,FIN(m2));  (* Receive client Finished message *)
   if m2 = hmac(StrongHash,kcm,log_SFIN) then  (* kcm represents kcm; check mac of finished from client *)
     let log_CFIN = (log_SFIN,FIN(m2)) in  (* received ClientHello || sent ServerHello || sent Certificate || sent CertificateVerify || sent ServerFinished || received ClientFinished *)
-	let rms =  kdf_psk(ms,log_CFIN) in
-  event ServerStateEvKc(quote,kc);
-  event ServerStateEvKch(quote,kch);
-  event ServerStateEv(quote,gxy);
-  event ServerFinished(cr,sr,psk,pubLTK,offer,mode,kc,ks,ems,rms);
-  event ServerComp(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr,pubEK,dev_status1)
+    let rms =  kdf_psk(ms,log_CFIN) in
+  event ServerFinished(cr,sr,psk,pubLTK,offer,mode,kc,ks,ems,rms)
   (* insert serverSession(cr,sr,psk,offer,mode,kc,ks,ems,rms);  kc and ks are passed to appData via this table *)
 
 ).
