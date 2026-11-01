@@ -2,10 +2,11 @@
 (*  Security and Threat Model *)
 (********************************************************)
 type identity.  (* long-term identity of the machine *)
+type measurements.
 
 free io:channel.
 const zero: bitstring.
-free dev_statusRef: bitstring.  (* represents Ref. Values *)
+free dev_statusRef: measurements.  (* represents Ref. Values *)
 
 (********************************************************)
 (* Authenticated Encryption with Additional Data *)
@@ -451,6 +452,72 @@ reduc forall k:sym_enc_key, m:bitstring;
 fun b2s(bitstring): sym_enc_key [data].
 
 free mesg:bitstring [private].
+
+(**********************************************************************)
+(* POST-HANDSHAKE AUTHENTICATOR & APPLICATION LAYER EXTENSIONS        *)
+(**********************************************************************)
+
+(********************************************************)
+(*  TLS 1.3 Exporter Interface  *)
+(********************************************************)
+
+const exporter_label: label.  (* represents the fixed literal label "exporter" [Sec. 7.5, RFC9846] *)
+
+letfun tls_exporter(exp_secret:bitstring, l:label, context_value:bitstring) =  (* 1st parameter is exporter_exp_secret [Sec. 7.5, RFC9846]; 2nd parameter is the caller's exporter label; 3rd parameter is the caller's context_value *)
+  hkdf_expand_label(derive_secret(exp_secret,l,zero), exporter_label, hash(StrongHash,context_value)).   (* TLS-Exporter(label, context_value, key_length) = HKDF-Expand-Label(Derive-Secret(Secret, label, ""), "exporter", Hash(context_value), key_length) [Sec. 7.5, RFC9846] *)
+
+(********************************************************)
+(* Exporter Labels & Post-Handshake Record Framing      *)
+(********************************************************)
+const ea_server_hs_context,  (* "EXPORTER-server authenticator handshake context" [RFC 9261] *)
+  ea_server_fin_key,         (* "EXPORTER-server authenticator finished key" [RFC 9261] *)
+  expat_attestation: label.  (* "Attestation" binder exporter label [draft-fossati-seat-expat] *)
+
+(********************************************************)
+(* EA-Specific Exporter Derivations                     *)
+(********************************************************)
+
+letfun ea_derive_hs_context(cb:bitstring) =  (* cb is the exporter_secret (ems) [Sec. 7.5, RFC9846]; context_value is empty for this exporter [Sec. 5.1, RFC9261] *)
+  tls_exporter(cb, ea_server_hs_context, zero).
+
+letfun ea_derive_fin_key(cb:bitstring) =  (* cb is the exporter_secret (ems) [Sec. 7.5, RFC9846]; context_value is empty for this exporter [Sec. 5.1, RFC9261] *)
+  tls_exporter(cb, ea_server_fin_key, zero).
+
+letfun ea_derive_attestation_binder(cb:bitstring, req_ctx:bitstring) =  (* cb is the exporter_secret (ems) [Sec. 7.5, RFC9846]; context_value is the certificate_request_context [Sec. 5.1, draft-fossati-seat-expat] *)
+  tls_exporter(cb, expat_attestation, req_ctx).
+
+(********************************************************)
+(* Signature Domain Separation Context Strings          *)
+(********************************************************)
+const tls13_cv_context: bitstring [data].
+const ea_cv_context: bitstring [data].
+
+(********************************************************)
+(* ALTEA Transport Framing & Type Confusion Prevention  *)
+(* Ref: draft-reddy-seat-expat-transport-01             *)
+(********************************************************)
+const ALTA_magic: bitstring [data].
+
+type auth_msg_type.
+const auth_request: auth_msg_type [data].
+const authenticator: auth_msg_type [data].
+const auth_error: auth_msg_type [data].
+const auth_capabilities: auth_msg_type [data].
+
+fun AuthFrame(bitstring, auth_msg_type, msg): bitstring [data].
+
+fun AuthenticatorRequest(bitstring):msg [data].
+fun AuthenticatorResponse(msg, msg, msg):msg [data].
+
+(**********************************************************************)
+(* Application Data Record Layer                                      *)
+(**********************************************************************)
+fun ph_msg(bitstring, bitstring): bitstring.
+reduc forall phdata:bitstring, k:bitstring;
+  ph_read(ph_msg(phdata, k), k) = phdata.
+
+fun ae2b(ae_key): bitstring [data, typeConverter].
+fun r2b(random): bitstring [data, typeConverter].
 
 (**********************************************************************)
 (* Sanity Checks (Reachability props): should all be false (confirms event is reachable) *)
