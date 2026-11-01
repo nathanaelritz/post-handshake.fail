@@ -438,6 +438,10 @@ event ServerStateEvKc(bitstring,ae_key).  (* quote,kc *)
 
 event ServerID(identity,bitstring).  (* Server's ID and session key gxy *)
 event ClientID(identity,bitstring).  (* Client's view of the Server's ID and session key gxy *)
+
+event ServerEAComp(identity, preSharedKey, params, params, ae_key, ae_key, bitstring, bitstring, random, random, pubkey, pubkey, measurements).
+event ClientEAComp(identity, preSharedKey, params, params, ae_key, ae_key, bitstring, bitstring, random, random, pubkey, pubkey, measurements).
+
 (**********************************************************************)
 (* Type Declarations *)
 (**********************************************************************)
@@ -527,7 +531,7 @@ fun r2b(random): bitstring [data, typeConverter].
 
 (**********************************************************************)
 (* Sanity Checks (Reachability props): should all be false (confirms event is reachable) *)
-(*********************************************************************
+(**********************************************************************)
 
 query idS, idXS: identity, gxy:bitstring;
   (* should be false (confirms both events are reachable)
@@ -701,8 +705,6 @@ query ev:bitstring,kch1:ae_key,kch2:ae_key;
       (kch1 = kch2)
 .
 
-*)
-
 
 (* 
 Goal G3: w.r.t. client_write_key (kc) for application data derived from client_application_traffic_secret_0 (atsc) 
@@ -753,6 +755,49 @@ query ev,ev1,ev2:bitstring,gxy1:bitstring,gxy2:bitstring,
         ==> ((kc1,ev1) = (kc2,ev2)) || event(ClientID(ID, e2b(BadElement)))
 .
 
+(**********************************************************************)
+(* Agreement of composition (RA + TLS) parameters *)
+(**********************************************************************)
+(* Property G-C2: Composition Property for Relay attack
+Goal: If the client finished the session with RA and TLS session parameters, 
+            it must have started with the server having exactly the same RA and TLS session parameters 
+            as long as privAK is not leaked ...
+Events: ClientComp is placed when Client is ready to establish connection (just before sending ClientFinished); 
+        PreServerComp is placed just before sending ServerFinished
+Parameters of agreement: Combines the parameters of agreement from RA property (G-RA) and TLS property (G-TLS)
+*)
+query pubEK:pubkey,dev_state,dev_state1,dev_state2:measurements,quote:bitstring,
+      cr:random, sr:random, cr':random, sr':random,
+      ID:identity,pubLTK:pubkey,pubAK:pubkey,
+      psk:preSharedKey, e:element, pubCA,pubISV:pubkey,
+      offer:params, mode:params, ID_S:identity,
+      kc:ae_key,ks:ae_key,ems:bitstring,rms:bitstring;
+
+    (* should be false (confirms events are reachable) *)
+      event(ClientEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1)) &&
+      event(ServerEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1))
+    ;
+
+    (* Result: true (assuming AK trust assumption | EK is non-confidential )  *)
+      inj-event(ClientEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1)) ==>
+      inj-event(ServerEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1))
+      || event(LeakedAK(pubAK))
+    ;
+
+    (* Result: true (assuming LTK and CA trust assumption | EK is non-confidential )  *)
+      inj-event(ClientEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1)) ==>
+      inj-event(ServerEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1))
+      || event(LeakedLTK(pubLTK))
+      || event(LeakedCA(pubCA))
+.
+
+(********************************************************)
+restriction cr,sr,cr',sr':random,e:element;
+  event(ServerChoosesKEX(cr,sr,DHE_13(WeakDH,e)));
+  event(ServerChoosesHash(cr',sr',WeakHash)) ==> false.
+(********************************************************)
+
+
 (********************************************************)
 (* Client Authenticator Process                         *)
 (********************************************************)
@@ -798,6 +843,9 @@ let Client_EA(ID_C: identity, ID_S: identity, psk: preSharedKey,
     if ea_mac = hmac(StrongHash, b2mk(ea_fin), log_EA_CV) then  (* verify Authenticator Finished HMAC over log_EA_CV using key derived from ea_fin [Sec. 5.2.3, RFC9261] *)
     (
     let pubLTK = pubEK in (* pubLTK is pubEK for backward compat. with legacy queries *)
+
+    event ClientEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_status1);
+
     event ClientFinishedWithID(ID_S,pubLTK,pubAK,psk,cr,sr,offer,mode,kc,ks,ems,rms);
     event ClientFinishedWithBothPub(pubAK,psk,pubEK,cr,sr,offer,mode,kc,ks,ems,rms);
     event ClientConn(quote);
@@ -862,6 +910,8 @@ let Server_EA(server_cert: bitstring, ID_S: identity, privEK, privAK: privkey,
   let ea_fin = ea_derive_fin_key(ems) in  (* derive Authenticator Finished Key using label "EXPORTER-server authenticator finished key" [Sec. 5.1, RFC9261] *)
   let ea_mac = hmac(StrongHash, b2mk(ea_fin), log_EA_CV) in  (* compute Authenticator Finished HMAC over log_EA_CV using ea_fin key [Sec. 5.2.3, RFC9261] *)
 
+  event ServerEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_status1);
+
   event Conveyed(log_EA_CRT);
   event Sent(quote);
   event SentWithPubEK(quote,pubEK);
@@ -893,7 +943,7 @@ let Server_EA(server_cert: bitstring, ID_S: identity, privEK, privAK: privkey,
 (* (for usability/extensibility), we can use variables for messages, 
 e.g., SH so that these variables can then be used in logs *)
 
-let Client(ID_C:identity,ID_S:identity,pubAK:pubkey,pubCA:pubkey) =
+let Client(ID_C:identity,ID_S:identity,pubCA:pubkey) =
 (
   in(io, ioffer:params);  (* io is a public channel. ioffer is obtained from adversary as input to allow adversary to generate all valid patterns *)
   let nego(=aTLS,DHE_13(g,eee),hash_algo,ev_type) = ioffer in

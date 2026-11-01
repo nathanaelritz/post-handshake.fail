@@ -78,10 +78,9 @@ let run_Client(pubCA:pubkey) =
   (
   (* ID_S (=hostname/FQDN/SAN) is known to the client, e.g., the desired website it wants to connect. *)
   get agent_keys(ID_S,_,_,_,_,_,_) in
-  get agent_keys(_,_,_,_,pubAK,_,_) in
 
   (* The following replication models multiple sessions of client with these parameters *)
-  !Client(ID_C,ID_S,pubAK,pubCA)
+  !Client(ID_C,ID_S,pubCA)
   ))
 .
 
@@ -144,9 +143,11 @@ process
 
   !(gen_agents_data(privCA))
   | !(run_Client(pubCA)) | !(run_Server)
-  | !(LCA(privCA))
+
   | !(LEK)
-  | !(LAK)
   | !(LLTK)
+  | !(LAK)
+  | !(LCA(privCA))
+  
   | !(SendBadElement)
 
