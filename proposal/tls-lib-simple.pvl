@@ -189,17 +189,7 @@ const tls13_resumption_psk_binder_key,  (* represents label "ext binder" | "res 
 
   tls13_key,  (* represents "key" [Sec. 7.3, RFC8446] *)
 
-  tls13_finished,  (* represents label "finished" [Sec. 4.4.4, RFC8446] *)
-
-  tls13_h_exp_master, (* represents label "h exp master" for cryptographic binding *)
-  tls13_ra_binder, (* represents label "ra binder" for cryptographic binding *)
-  user_defined,  (* user-defined for exporter *)
-
-  tls13_exporter: label.  (* represents label "exporter" *)
-
-const context_value:bitstring.
-const context_value2:bitstring.
-
+  tls13_finished: label.  (* represents label "finished" [Sec. 4.4.4, RFC8446] *)
 
 (* Basic functions *)
 letfun hkdf_extract(salt:bitstring, ikm:bitstring) =  (* 1st argument is salt and 2nd argument is Input Keying Material (IKM) [Sec. 7.1, RFC8446] *)
@@ -220,9 +210,7 @@ letfun kdf_es(psk:preSharedKey,log1:bitstring) = (* 1st parameter represents PSK
   let atsc0 = derive_secret(es, tls13_client_early_traffic_secret, log1) in (* atsc0 is the client_early_traffic_secret [Sec. 7.1, RFC8446] *)
   let kc0   = hkdf_expand_label(atsc0,tls13_key,zero) in (* [sender]_write_key for Record type = 0-RTT Application in the table [Sec. 7.3, RFC8446] *)
   let ems0  = derive_secret(es,tls13_early_exporter_master_secret,log1) in  (* ems0 is the early_exporter_master_secret [Sec. 7.1, RFC8446] *)
-  let ik0 = derive_secret(ems0,user_defined,zero) in  (* Intermediate key for Early Exporter [Sec. 7.5, RFC8446] *)
-  let exp0 = hkdf_expand_label(ik0,tls13_exporter,hash(StrongHash,context_value)) in  (* Early exporter value [Sec. 7.5, RFC8446] *)
-  (es,b2mk(kb),b2ae(kc0),exp0).
+  (es,b2mk(kb),b2ae(kc0),ems0).
 
 (* Handshake Secret and its derivatives *)
 letfun kdf_hs(es:bitstring, gxy:bitstring, log2:bitstring) =  (* 1st parameter represents Early Secret as salt; 2nd parameter represents (EC)DHE parameter as IKM; 3rd parameter represents messages ClientHello...ServerHello for derive_secret *)
@@ -251,11 +239,6 @@ letfun kdf_ms(hs:bitstring, log3:bitstring) =  (* 1st parameter represents Hands
 letfun kdf_psk(ms:bitstring, log4:bitstring) =  (* 1st parameter represents Master Secret; 2nd parameter represents messages ClientHello...client Finished for derive_secret *)
        derive_secret(ms,tls13_resumption_master_secret,log4).  (* represents resumption_master_secret in the Key Schedule [Sec. 7.1, RFC8446] *)
 
-(* Proposed exporter for cryptographic binding *)
-letfun kdf_exp(hs:bitstring, log2:bitstring) =  (* 1st parameter represents Handshake Secret as salt; 2nd parameter represents messages ClientHello...ServerHello for derive_secret *)
-  let hes = derive_secret(hs, tls13_h_exp_master, log2) in
-  let ik1 = derive_secret(hes, tls13_ra_binder, zero) in
-  hkdf_expand_label(ik1, tls13_exporter, hash_ideal(context_value2)).
 
 (********************************************************)
 (*  Message Formats, Session State *)
