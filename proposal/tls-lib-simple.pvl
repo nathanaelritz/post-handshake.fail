@@ -170,6 +170,13 @@ fun psk2b(preSharedKey): bitstring
 reduc forall b:bitstring; psk2b(PSK(b)) = b
 otherwise psk2b(NoPSK) = zero.
 
+(********************************************************)
+(* Generation of agents and keys *)
+(* All parameters for Server side *)
+(********************************************************)
+
+(*    agent_keys(ID_S,    privLTK,pubLTK,privAK ,pubAK ,privEK ,pubEK ) *)
+table agent_keys(identity,privkey,pubkey,privkey,pubkey,privkey,pubkey).
 
 (********************************************************)
 (*  TLS 1.3 Key Schedule  *)
@@ -266,13 +273,12 @@ const StdTLS,aTLS: tls_typ.
 type params.
 fun nego(tls_typ,kex_alg,hash_alg,ev_typ): params [data].
 
-fun CH(random,params,random):msg [data].  (* ClientHello *)
+fun CH(random,params):msg [data].  (* ClientHello *)
 fun SH(random,params):msg [data].  (* ServerHello *)
 (* EncryptedExtensions msg not modelled *)
-(*  CRT(ID_S    ,server_cert ) *)
-fun CRT(identity,bitstring   ):msg [data].  (* Certificate message of TLS *)
+(*  CRT(server_cert) *)
+fun CRT(bitstring):msg [data].  (* Certificate message of TLS *)
 fun CV(bitstring):msg [data].  (* CertificateVerify *)
-fun CV_Ext(bitstring,bitstring):msg [data].  (* Extended CertificateVerify *)
 fun FIN(bitstring):msg [data].  (* Finished *)
 
 (********************************************************)
@@ -284,8 +290,8 @@ event Sent(bitstring).
 event SentWithPubEK(bitstring,pubkey).
 event Accepted(bitstring).
 event AcceptedWithPubEK(bitstring,pubkey).
-event SentRdata(bitstring).
-event AcceptedRdata(bitstring).
+event SentRdata(measurements).
+event AcceptedRdata(measurements).
 event Conveyed(bitstring).
 event Appraised(bitstring).
 event ClientConn(bitstring).
@@ -343,13 +349,13 @@ event ClientComp(identity,
       params,params,
       ae_key,ae_key,bitstring,bitstring,
       random,random,
-      pubkey,bitstring).
+      pubkey,measurements).
 (* ClientRA is for explicit agreement of all RA parameters: (pubAK,pubEK,dev_state,ev) *)
-event ClientRA(pubkey,pubkey,bitstring,bitstring).
-event ClientRA2(pubkey,pubkey,bitstring).
-event ClientRA3(pubkey,pubkey,bitstring,identity).
-event ClientRANew(identity,pubkey,pubkey,pubkey,bitstring,bitstring). (* ID,pubLTK,pubAK,pubEK,dev_state,ev *)
-event ClientRAWithoutAK(pubkey,bitstring,bitstring).
+event ClientRA(pubkey,pubkey,measurements,bitstring).
+event ClientRA2(pubkey,pubkey,measurements).
+event ClientRA3(pubkey,pubkey,measurements,identity).
+event ClientRANew(identity,pubkey,pubkey,pubkey,measurements,bitstring). (* ID,pubLTK,pubAK,pubEK,dev_state,ev *)
+event ClientRAWithoutAK(pubkey,measurements,bitstring).
 
 event ClientStateEv(bitstring,bitstring).  (* quote,gxy *)
 event ClientStateEvKch(bitstring,ae_key).  (* quote,kch *)
@@ -409,18 +415,18 @@ event PreServerComp(identity,
       params,params,
       ae_key,ae_key,bitstring,
       random,random,
-      pubkey,bitstring).
+      pubkey,measurements).
 (* ServerComp(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr,pubEK,dev_state) *)
 event ServerComp(identity,
       pubkey,preSharedKey,
       params,params,
       ae_key,ae_key,bitstring,
       random,random,
-      pubkey,bitstring).
+      pubkey,measurements).
 (* ServerRA is for explicit agreement of all RA parameters: (ID,pubLTK,pubAK,pubEK,dev_state,ev) *)
-event ServerRA(identity,pubkey,pubkey,pubkey,bitstring,bitstring).
-event ServerRA2(pubkey,pubkey,bitstring).
-event ServerRAWithoutAK(pubkey,bitstring,bitstring).
+event ServerRA(identity,pubkey,pubkey,pubkey,measurements,bitstring).
+event ServerRA2(pubkey,pubkey,measurements).
+event ServerRAWithoutAK(pubkey,measurements,bitstring).
 event ServerFinished(random,random,
                      preSharedKey, pubkey,
              params,params,
@@ -521,7 +527,7 @@ fun r2b(random): bitstring [data, typeConverter].
 
 (**********************************************************************)
 (* Sanity Checks (Reachability props): should all be false (confirms event is reachable) *)
-(**********************************************************************)
+(*********************************************************************
 
 query idS, idXS: identity, gxy:bitstring;
   (* should be false (confirms both events are reachable)
@@ -621,6 +627,266 @@ query cr,sr,cr',sr':random, psk:preSharedKey, ID_S:identity,
       event(LeakedCA(pubCA))
 .
 
+query idS, idXS: identity, gxy:bitstring;
+  (* should be false (confirms both events are reachable)
+  i.e., there exists a trace where *both* ServerID and ClientID 
+  are reachable with a shared/common gxy *)
+  (event(ServerID(idS,gxy)) &&
+   event(ClientID(idXS,gxy)))
+.
+
+(**********************************************************************)
+(* Relay attacks queries *)
+(**********************************************************************)
+
+(* Reachability *)
+query ev:bitstring,gxy:bitstring;
+      event(ClientStateEv(ev,gxy)) &&
+      event(ServerStateEv(ev,gxy))
+.
+
+query ev:bitstring,kch:ae_key;
+      event(ClientStateEvKch(ev,kch)) &&
+      event(ServerStateEvKch(ev,kch))
+.
+
+query ev:bitstring,kc:ae_key;
+      event(ClientStateEvKc(ev,kc)) &&
+      event(ServerStateEvKc(ev,kc))
+.
+
+(**********************************************************************)
+(* Binding *)
+(*
+Goal G1: Binding Evidence to TLS session: Evidence should not be usable in
+  other TLS sessions, even if they are between the same endpoints.
+  (Not binding to endpoints because multiple sessions of endpoints are possible)
+3 levels of binding to TLS session: 
+  L1. gxy (gx,gy)
+  L2. kch (up to ServerHello)
+  L3. kc (up to ServerFinished): may include ID_S in Certificate message
+  L1 <= L2 <= L3
+Formalization: Same evidence is not accepted by two different TLS sessions.
+  TLS session identified by gxy. Trace should not contain:
+  Client(ev1,gxy1); Server(ev1,gxy2);
+  (* Informal: If they see the same evidence, they should be in the same session *)
+Parameters: Quote instead of dev_state
+  ds = ev, gxy
+  server identity not a part of the query because that is covered by G-C2
+Events: 
+  ServerStateEv after verifying CFin.
+  Rationale: Both endpoints have accepted the connection with the same evidence. 
+Result: true for Binder #3,5,7; and false otherwise
+*)
+query ev:bitstring,gxy1:bitstring,gxy2:bitstring,
+ pubEK:pubkey,dev_state:bitstring,quote:bitstring,
+      cr:random, sr:random, cr':random, sr':random,
+      ID:identity,pubLTK:pubkey,pubAK:pubkey,
+      psk:preSharedKey, e:element,
+      offer:params, mode:params, ID_S:identity,
+      kc:ae_key,ks:ae_key,ems:bitstring,rms:bitstring;
+      event(ClientStateEv(ev,gxy1)) &&
+      event(ServerStateEv(ev,gxy2)) ==>
+      (gxy1 = gxy2)
+.
+
+(*
+Goal G2: Binding to client_write_key (kch) derived from handshake traffic secret (htsc) 
+Rationale: It has log_SH in addition to gxy
+Result: false for all except our proposed
+*)
+query ev:bitstring,kch1:ae_key,kch2:ae_key;
+      event(ClientStateEvKch(ev,kch1)) &&
+      event(ServerStateEvKch(ev,kch2)) ==>
+      (kch1 = kch2)
+.
+
+*)
+
+
+(* 
+Goal G3: w.r.t. client_write_key (kc) for application data derived from client_application_traffic_secret_0 (atsc) 
+Rationale: It has transcript hash up to log_SF (vs. log_SH in above property).
+*)
+query ev:bitstring,kc1:ae_key,kc2:ae_key;
+      event(ClientStateEvKc(ev,kc1)) &&
+      event(ServerStateEvKc(ev,kc2)) ==>
+      (kc1 = kc2)
+.
+
+query ev,ev1,ev2:bitstring,gxy1:bitstring,gxy2:bitstring,
+      pubEK:pubkey,dev_status1,dev_status2:measurements,quote:bitstring,
+      cr:random, sr:random, cr':random, sr':random,
+      ID,ID1,ID2:identity,pubLTK:pubkey,pubAK:pubkey,
+      psk:preSharedKey, e:element,
+      offer:params, mode:params, ID_S:identity,
+      kc,kc1,kc2,ks:ae_key,ems:bitstring,rms:bitstring;
+
+      (* Full session with kc/ev correlated *)
+      (* NOTE: Evidence and Application Traffic Keys CANNOT be correlated together in 
+         post-handshake without additional assumptions.
+      *)
+        (
+          event(ClientComp(ID,pubLTK,psk,offer,mode,kc1,ks,ems,rms,cr,sr,pubEK,dev_status1)) &&
+          event(ClientStateEvKc(ev1,kc1)) 
+        )
+            && (* Correlation *)
+        (
+          event(PreServerComp(ID,pubLTK,psk,offer,mode,kc2,ks,ems,cr,sr,pubEK,dev_status2)) &&
+          event(ServerStateEvKc(ev2,kc2))
+        )
+        (* Result: false. *)
+        ==> ((kc1,ev1) = (kc2,ev2))
+      ;
+
+      (* Add assumption that excludes degenerate key-shares from Client gxy calculation. *)
+        (
+          event(ClientComp(ID,pubLTK,psk,offer,mode,kc1,ks,ems,rms,cr,sr,pubEK,dev_status1)) &&
+          event(ClientStateEvKc(ev1,kc1)) 
+        )
+            && (* Correlation *)
+        (
+          event(PreServerComp(ID,pubLTK,psk,offer,mode,kc2,ks,ems,cr,sr,pubEK,dev_status2)) &&
+          event(ServerStateEvKc(ev2,kc2))
+        )
+        (* Result: Should be true *)
+        ==> ((kc1,ev1) = (kc2,ev2)) || event(ClientID(ID, e2b(BadElement)))
+.
+
+(********************************************************)
+(* Client Authenticator Process                         *)
+(********************************************************)
+
+let Client_EA(ID_C: identity, ID_S: identity, psk: preSharedKey, 
+    cr: random, sr: random, offer: params, mode: params, gxy: bitstring, kch: ae_key, 
+    ks: ae_key, kc: ae_key, ems: bitstring, rms: bitstring, shash_algo: hash_alg) = 
+(
+  get agent_keys(_, _, _, _, pubAK, _, _) in (* Grab trusted pubAK *)
+  new req_ctx: bitstring;  (* generate fresh certificate_request_context [Sec. 4, RFC9261] *)
+  let req_msg = AuthenticatorRequest(req_ctx) in
+  out(io, AuthFrame(ALTA_magic, auth_request, req_msg));  (* send Authenticator Request inside Shim Mode AuthFrame [Sec. 7, ALTEA] *)
+
+  in(io, (ea_frame: bitstring));  (* receive Authenticator message wrapped in AuthFrame [Sec. 7, ALTEA] *)
+  let AuthFrame(=ALTA_magic, =authenticator, ea_bundle) = ea_frame in (* enforce ALTA magic value and authenticator msg type *)
+  let AuthenticatorResponse(CRT(ea_cert), CV(ea_sg), FIN(ea_mac)) = ea_bundle in  (* pattern-match components: Certificate, CertificateVerify, and Finished [Sec. 3.4, ALTEA] *)
+
+  (* Certificate carries ephemeral key pubEK + attestation evidence *)
+  let (selfcert: bitstring, selfsign: bitstring) = ea_cert in  (* pattern match ea_cert *)
+  let (pubEK:pubkey, quote: bitstring) = selfcert in (* check selfsign format *)
+  let (dataSign:bitstring, sig:bitstring) = quote in  (* check quote format *)
+  let (rdata:bitstring, dev_status1:measurements) = dataSign in  (* check dataSign format *)
+
+  if verify(pubAK,dataSign,sig) = true then  (* check signatures on Quote *)
+  if dev_status1 = dev_statusRef then (* check measurements against Ref. Values *)
+
+  (* verify binding between the TLS Authenticator Identity Key (pubEK) and Attestation Evidence *)
+  let exported_val = ea_derive_attestation_binder(ems, req_ctx) in  (* derive exported key material using exporter_secret (ems) and req_ctx as context_value [Sec. 7.5, RFC9846; Sec. 5.1, draft-fossati-seat-expat] *)
+  if rdata = (exported_val,pubEK) then
+
+  let ea_hs_ctx = ea_derive_hs_context(ems) in  (* derive Authenticator Handshake Context using label "EXPORTER-server authenticator handshake context" [Sec. 5.1, RFC9261] *)
+  let log_EA_CRT = (ea_hs_ctx, req_msg, CRT(ea_cert)) in  (* after this step, log_EA_CRT contains ea_hs_ctx || Authenticator Request || Certificate [Sec. 5.2.2, RFC9261] *)
+
+  if verify(pubEK, hash(shash_algo, (ea_cv_context, log_EA_CRT)), ea_sg) = true then  (* verify CertificateVerify signature over Authenticator transcript hash using pubEK [Sec. 5.2.2, RFC9261] *)
+  (
+    event Accepted(quote);
+    event Appraised(log_EA_CRT);
+    event AcceptedRdata(dev_status1);
+    event AcceptedWithPubEK(quote,pubEK);
+    let log_EA_CV = (log_EA_CRT, CV(ea_sg)) in  (* after this step, log_EA_CV contains ea_hs_ctx || Authenticator Request || Certificate || CertificateVerify *)
+    
+    let ea_fin = ea_derive_fin_key(ems) in  (* derive Authenticator Finished Key using label "EXPORTER-server authenticator finished key" [Sec. 5.1, RFC9261] *)
+    if ea_mac = hmac(StrongHash, b2mk(ea_fin), log_EA_CV) then  (* verify Authenticator Finished HMAC over log_EA_CV using key derived from ea_fin [Sec. 5.2.3, RFC9261] *)
+    (
+    let pubLTK = pubEK in (* pubLTK is pubEK for backward compat. with legacy queries *)
+    event ClientFinishedWithID(ID_S,pubLTK,pubAK,psk,cr,sr,offer,mode,kc,ks,ems,rms);
+    event ClientFinishedWithBothPub(pubAK,psk,pubEK,cr,sr,offer,mode,kc,ks,ems,rms);
+    event ClientConn(quote);
+    event ClientComp(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,dev_status1);
+    event ClientRA(pubAK,pubEK,dev_status1,quote);
+    event ClientRA2(pubAK,pubEK,dev_status1);
+    event ClientRA3(pubAK,pubEK,dev_status1,ID_C);
+    event ClientRAWithoutAK(pubEK,dev_status1,quote);    
+    event ClientRANew(NULL_ID,NULL_pubkey,pubAK,pubEK,dev_status1,quote);
+    event ClientID(ID_S,gxy);
+    event ClientStateEvKc(quote,kc);    
+    event ClientStateEvKch(quote,kch);
+    event ClientStateEv(quote,gxy);
+    event ClientFinished(pubEK,psk,cr,sr,offer,mode,kc,ks,ems,rms);
+
+      in(io, (app_msg_enc:bitstring))  (* receive post-handshake encrypted application message *)
+      (* let app_msg_s = ph_read(app_msg_enc, ae2b(ks)) in  (* decrypt and verify AEAD application record using server write key ks *)
+      event ClientReceivesAppData(ID_S,pubLTK,pubEK,pubAK,cr,sr,req_ctx,ems,ks,kc,dev_status1,app_msg_s) *)
+    )
+  )
+).
+
+(********************************************************)
+(* Server Authenticator                                 *)
+(********************************************************)
+
+let Server_EA(server_cert: bitstring, ID_S: identity, privEK, privAK: privkey, 
+    psk: preSharedKey, cr: random, sr: random, offer: params, mode: params, 
+    gxy: bitstring, kch: ae_key, ks: ae_key, kc: ae_key, ems: bitstring, rms: bitstring, hash_algo: hash_alg) =
+(
+  in(io, req_frame: bitstring) [precise];  (* receive Authenticator Request frame from Client [Sec. 7, ALTEA] *)
+  let AuthFrame(=ALTA_magic, =auth_request, req_msg) = req_frame in (* enforce ALTA magic value and auth_request msg type *)
+  let AuthenticatorRequest(req_ctx) = req_msg in  (* pattern-match to extract certificate_request_context and encapsulated challenge secret *)
+
+  let pubEK = pk(privEK) in
+  let pubLTK = pk(privEK) in (* pubLTK is pubEK for backward compat. with legacy queries *)
+  let pubAK = pk(privAK) in
+
+  (* Evidence generation *)
+  (* model of dev_status (measurements): input from adversary *)
+  (* Lets the adversary instantiate any desired VM 
+      but only the one with correct measurements will be accepted at Verifier *)
+  (* Alternative model: generate using new, give to adversary and use tables to store *)
+    in(io, dev_status1: measurements) [precise];
+
+  (* RFC 9261 Authenticator Construction *)
+  let exported_val = ea_derive_attestation_binder(ems, req_ctx) in  (* derive exported key material using exporter_secret (ems) and req_ctx as context_value [Sec. 7.5, RFC9846; Sec. 5.1, draft-fossati-seat-expat] *)
+  let rdata = (exported_val,pubEK) in
+
+  let dataSign = (rdata,dev_status1) in
+  let quote = (dataSign, sign(privAK,dataSign)) in
+
+  let selfsign = sign(privEK,(pubEK,quote)) in   
+  let ea_cert = ((pubEK,quote),selfsign) in
+
+  let ea_hs_ctx = ea_derive_hs_context(ems) in  (* derive Authenticator Handshake Context using label "EXPORTER-server authenticator handshake context" [Sec. 5.1, RFC9261] *)
+  let log_EA_CRT = (ea_hs_ctx, req_msg, CRT(ea_cert)) in  (* construct Authenticator transcript log containing ea_hs_ctx || Authenticator Request || Certificate [Sec. 5.2.2, RFC9261] *)
+
+  let ea_sg = sign(privEK, hash(hash_algo, (ea_cv_context, log_EA_CRT))) in  (* sign Authenticator transcript hash using ephemeral private key privEK [Sec. 5.2.2, RFC9261] *)
+  let log_EA_CV = (log_EA_CRT, CV(ea_sg)) in  (* construct Authenticator transcript log containing log_EA_CRT || CertificateVerify *)
+
+  let ea_fin = ea_derive_fin_key(ems) in  (* derive Authenticator Finished Key using label "EXPORTER-server authenticator finished key" [Sec. 5.1, RFC9261] *)
+  let ea_mac = hmac(StrongHash, b2mk(ea_fin), log_EA_CV) in  (* compute Authenticator Finished HMAC over log_EA_CV using ea_fin key [Sec. 5.2.3, RFC9261] *)
+
+  event Conveyed(log_EA_CRT);
+  event Sent(quote);
+  event SentWithPubEK(quote,pubEK);
+  event SentRdata(dev_status1);
+  event ServerRA(ID_S,pubLTK,pubAK,pubEK,dev_status1,quote);  
+  event ServerRA2(pubAK,pubEK,dev_status1);
+  event ServerRAWithoutAK(pubEK,dev_status1,quote);
+
+  event PreServerFinishedWithID(ID_S,pubLTK,pubAK,psk,cr,sr,offer,mode,kc,ks,ems);
+  event PreServerFinishedWithBothPub(pubAK,psk,pubEK,cr,sr,offer,mode,kc,ks,ems);
+  event PreServerComp(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr,pubEK,dev_status1);
+  event ServerComp(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr,pubEK,dev_status1);
+
+  event ServerStateEvKc(quote,kc);
+  event ServerStateEvKch(quote,kch);
+  event ServerStateEv(quote,gxy);
+
+  let ea_bundle = AuthenticatorResponse(CRT(ea_cert), CV(ea_sg), FIN(ea_mac)) in
+  out(io, AuthFrame(ALTA_magic, authenticator, ea_bundle));  (* send Authenticator message bundle inside Shim Mode AuthFrame [Sec. 7, ALTEA] *)
+
+  new app_msg: bitstring;  (* generate fresh application payload *)
+  (* event ServerSendsAppData(ID_S,pubLTK,pubEK,pubAK,cr,sr,req_ctx,ems,ks,kc,dev_status1,app_msg); *)
+  out(io, ph_msg(app_msg, ae2b(ks)))  (* encrypt and transmit post-handshake record with server application write key ks *)
+).
+
 (********************************************************)
 (* Client *)
 (********************************************************)
@@ -639,8 +905,7 @@ let Client(ID_C:identity,ID_S:identity,pubAK:pubkey,pubCA:pubkey) =
   (* Note that we really need DHE_13(g,gx) *)
 
   new cr:random;  (* random nonce: ClientHello.random; 8446bis page 10 *)
-  new ar:random;  (* random nonce for attestation *)
-  let ch = CH(cr,offer,ar) in
+  let ch = CH(cr,offer) in
   let psk = NoPSK in (* non-PSK handshake, so use NoPSK to get zero. *)
   let (es:bitstring,kb:mac_key,kc0:ae_key,exp0:bitstring) = kdf_es(psk,msg2bytes(ch)) in  (* non-PSK handshake, so use NoPSK to get zero. log1 is simply ch *)
   (* If a given secret is not available, then the 0-value consisting of a string of Hash.length bytes set to zeros is used.
@@ -656,11 +921,11 @@ let Client(ID_C:identity,ID_S:identity,pubAK:pubkey,pubCA:pubkey) =
 
   let gxy = e2b(dh_exp(g,gy,x)) in  (* represents (EC)DHE in Key Derivation [Sec. 7.1, RFC8446] *)
   let (hs:bitstring,kch:ae_key,ksh:ae_key,kcm:mac_key,ksm:mac_key) = kdf_hs(es,gxy,log_SH) in
-  in(io,CRT(ID_S,server_cert));  (* receive Certificate message (Note: =ID_S can be removed) *)
+  in(io,CRT(server_cert));  (* receive Certificate message (Note: =ID_S can be removed) *)
   let (id_pub_pair:bitstring, sig1:bitstring) = server_cert in  (* check server_cert format *)
     let (=ID_S,pubLTK:pubkey) = id_pub_pair in  (* check signed data format *)
   if verify(pubCA,id_pub_pair,sig1) = true then  (* check signatures on server_cert *)
-  let log_CRT = (log_SH,CRT(ID_S,server_cert)) in  (* after this step, log_CRT contains sent ClientHello || received ServerHello || received Certificate *)
+  let log_CRT = (log_SH,CRT(server_cert)) in  (* after this step, log_CRT contains sent ClientHello || received ServerHello || received Certificate *)
 
   in(io,CV(sg_LTK));  (* receive CertificateVerify message *)
   if verify(pubLTK,hash(shash_algo,log_CRT),sg_LTK) = true then  (* log_CRT contains msgs up to Certificate *)
@@ -683,14 +948,10 @@ let Client(ID_C:identity,ID_S:identity,pubAK:pubkey,pubCA:pubkey) =
     event ClientID(ID_S,gxy);
     event ClientFinished(pubLTK,psk,cr,sr,offer,mode,kc,ks,ems,rms);
     (* insert clientSession(cr,sr,psk,offer,mode,kc,ks,ems,rms);  kc and ks are passed to appData via this table *)
-    out(io,FIN(m2))  (* send ClientFinished message *)
+    out(io,FIN(m2)); (* send ClientFinished message *)
 
-
-(* to test secrecy *)
-    (* let key = b2s(gxy) in
-    let enc_msg = sym_enc(key,mesg) in
-    out (io, enc_msg);
-    0 *)
+    (* continue from TLS handshake into Exported Authenticator handshake  *)
+    Client_EA(ID_C,ID_S,psk,cr,sr,offer,mode,gxy,kch,ks,kc,ems,rms,shash_algo)
   )
 ).
 
@@ -701,7 +962,7 @@ let Client(ID_C:identity,ID_S:identity,pubAK:pubkey,pubCA:pubkey) =
 let Server(ID_S:identity, privLTK: privkey, privAK: privkey, privEK: privkey,ID_C:identity,server_cert:bitstring) =
 (
   in(io, ch:msg); (* Receive ClientHello message from Client and store in variable ch *)
-  let CH(cr,offer,ar) = ch in (* pattern matching to ensure that received message in variable ch is in the desired format fun CH(random,params,random):msg [data]. nonce will be stored in variable cr and parameters will be stored in variable offer. Attestation nonce will be stored in ar *)
+  let CH(cr,offer) = ch in (* pattern matching to ensure that received message in variable ch is in the desired format fun CH(random,params,random):msg [data]. nonce will be stored in variable cr and parameters will be stored in variable offer. Attestation nonce will be stored in ar *)
   let nego(=aTLS,DHE_13(g,gx),xhash_algo,xev_type) = offer in (* pattern matching to ensure that received message in variable offer is in the desired format fun nego(tls_typ,kex_alg,hash_alg,ev_typ): params [data]. *)
   let psk = NoPSK in (* non-PSK handshake, so use NoPSK to get zero. *)
   let (es:bitstring,kb:mac_key,kc0:ae_key,exp0:bitstring) = kdf_es(psk,msg2bytes(ch)) in  (* non-PSK handshake, so use NoPSK to get zero. log1 is simply ch *)
@@ -727,8 +988,8 @@ let Server(ID_S:identity, privLTK: privkey, privAK: privkey, privEK: privkey,ID_
   let pubLTK = pk(privLTK) in
   event ServerID(ID_S,gxy);
 
-  out(io,CRT(ID_S,server_cert));  (* Send Certificate message *)
-  let log_CRT = (log_SH,CRT(ID_S,server_cert)) in  (* received ClientHello || sent ServerHello || sent Certificate *)
+  out(io,CRT(server_cert));  (* Send Certificate message *)
+  let log_CRT = (log_SH,CRT(server_cert)) in  (* received ClientHello || sent ServerHello || sent Certificate *)
 
   (* CertificateVerify message *)
   let sg_LTK = sign(privLTK,hash(hash_algo,log_CRT)) in  (* A signature over the value Transcript-Hash(Handshake Context, Certificate) [Sec. 4.4, RFC8446] using LTK; Handshake Context via first row of table in Sec. 4.4 of RFC8446. log_CRT contains Handshake Context, Certificate. *)
@@ -752,7 +1013,8 @@ let Server(ID_S:identity, privLTK: privkey, privAK: privkey, privEK: privkey,ID_
   if m2 = hmac(StrongHash,kcm,log_SFIN) then  (* kcm represents kcm; check mac of finished from client *)
     let log_CFIN = (log_SFIN,FIN(m2)) in  (* received ClientHello || sent ServerHello || sent Certificate || sent CertificateVerify || sent ServerFinished || received ClientFinished *)
     let rms =  kdf_psk(ms,log_CFIN) in
-  event ServerFinished(cr,sr,psk,pubLTK,offer,mode,kc,ks,ems,rms)
-  (* insert serverSession(cr,sr,psk,offer,mode,kc,ks,ems,rms);  kc and ks are passed to appData via this table *)
-
+    event ServerFinished(cr,sr,psk,pubLTK,offer,mode,kc,ks,ems,rms);
+    
+    (* Continue from TLS handshake into Exported Authenticator handshake *)
+    Server_EA(server_cert,ID_S,privEK,privAK,psk,cr,sr,offer,mode,gxy,kch,ks,kc,ems,rms,hash_algo)
 ).

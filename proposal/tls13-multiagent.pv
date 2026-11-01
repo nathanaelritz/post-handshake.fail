@@ -19,8 +19,6 @@ The compromise of a server machine is modelled by leaking privAK or privLTK.
 
 (* Generation of agents and keys *)
 (* All parameters for Server side *)
-(*    agent_keys(ID_S,    privLTK,pubLTK,privAK ,pubAK ,privEK ,pubEK ) *)
-table agent_keys(identity,privkey,pubkey,privkey,pubkey,privkey,pubkey).
 
 (*    trust_store(ID_S    ,pubLTK,server_cert) *)
 table trust_store(identity,pubkey,bitstring).
@@ -89,13 +87,20 @@ let run_Client(pubCA:pubkey) =
 
 let run_Server = 
   (* Intuitively, this models a single server and the replication takes care of multiple servers *)
-  (* Allow several combinations, but for each private key, choose the corresponding public key *)
+  
+(* 
+(* Allow several combinations, but for each private key, choose the corresponding public key *)
   get agent_keys(ID_S,_,_,_,_,_,_) in
   get agent_keys(_,privLTK,pubLTK,_,_,_,_) in
   get agent_keys(_,_,_,privAK,pubAK,_,_) in
-  get agent_keys(_,_,_,_,_,privEK,pubEK) in  
+  get agent_keys(_,_,_,_,_,privEK,pubEK) in 
+*)
 
-  get trust_store(=ID_S,_,server_cert) in  (* retrieve the cert matching the ID *)
+  (* Alternatively, assume well configured server *)
+  get agent_keys(ID_S,privLTK,pubLTK,privAK,pubAK,privEK,pubEK) in 
+
+  (* retrieve the cert matching the ID *)
+  get trust_store(=ID_S,_,server_cert) in  
 
   (* The following replication models multiple sessions of server with these parameters *)
   !Server(ID_S,privLTK,privAK,privEK,NULL_ID,server_cert)
