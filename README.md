@@ -1,4 +1,4 @@
-# Proof of Insecurity of Post-handshake Attestation
+# Proof of Insecurity of Post-handshake Attestation 🤷
 
 ### Impact analysis of draft-fossati-seat-expat-04
 
@@ -68,7 +68,7 @@ Beyond the initial breakdown of server authentication, the lack of confirmation 
 
 #### Recommendations for Remediation
 
-Thankfully, the recommended action for remediation is straightforward. We recommend the authors of draft-fossati-seat-expat update the Passport Model validation steps in Section 4 so that the text explicitly requires that a cached Attestation Credential, such as an AR, must enable a Relying Party to cross-check the public key used to sign the authenticator's `CertificateVerify` message. 
+Thankfully, the recommended action for remediation is straightforward. We recommend the authors of draft-fossati-seat-expat update the Passport Model validation steps in Section 4 so that the text explicitly requires that an Attestation Credential, (such as a cached AR), it must enable a Relying Party to cross-check the public key used to sign the authenticator's `CertificateVerify` message. 
 
 
 ### Appendix: The Applied Cryptography Behind the Fix
