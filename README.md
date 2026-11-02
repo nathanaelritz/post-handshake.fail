@@ -2,7 +2,7 @@
 
 ### Impact analysis of draft-fossati-seat-expat-04
 
-This report details a critical specification flaw in [Section 4](https://www.ietf.org/archive/id/draft-fossati-seat-expat-04.html#section-4-4.2.1) of `draft-fossati-seat-expat-04` regarding the Passport Model. By omitting the requirement for the Relying Party to cross-check the Authenticator Identity Key (AIK) against the Attestation Result (AR), the current text completely breaks the cryptographic binding between the attestation evidence and the TLS connection.
+This report details a critical specification flaw in [Section 4](https://www.ietf.org/archive/id/draft-fossati-seat-expat-04.html#section-4-4.2.1) of `draft-fossati-seat-expat-04` regarding the Passport Model. By omitting the requirement for the Relying Party to cross-check the Authenticator Identity Key (AIK) against the Attestation Result (AR), the current text completely breaks the cryptographic binding between the Attestation Credential and the TLS connection.
 
 Symbolic analysis in ProVerif demonstrates high risk if implementations strictly follow the draft-04 text, and may become vulnerable to **unconstrained cross-connection AR replay** and **full MITM (Machine-in-the-Middle) impersonation**: nullifying the primary security guarantees of Attested TLS.
 
@@ -18,7 +18,7 @@ Imran Siddique later raised the issue again on [October 19th](https://github.com
 
 Certain risks persist if seat-expat continues to advance without integrating the remediation proposed in Issue #67:
 
-* **Vulnerable Implementations**: Developers implementing the Passport Model to the letter of the specification will introduce systemic vulnerabilities. They will assume the TLS library handles binding, while the TLS library assumes the application validates the claims.
+* **Vulnerable Implementations**: Developers implementing the Passport Model to the letter of the specification will introduce systemic vulnerabilities. They may assume the TLS library handles binding, while the TLS library assumes the application validates the claims.
 
 * **False Security Assurances in Confidential Computing:** Systems deploying this protocol under the assumption of hardware-enforced enclave protection will leak sensitive application workloads directly to active network adversaries, completely defeating the purpose of TEE-based workload isolation.
 
@@ -49,10 +49,10 @@ The absence of the `pubEK_cnf = pubEK` check structurally collapses the security
 | **Composition Agreement** | `ClientEAComp ==> ServerEAComp` evaluates to false. | The Client finishes the EA handshake with different parameters than the Server. An attacker can hijack the post-handshake phase without compromising the TEE. |
 | **Attestation Binding** | `ClientRA ==> ServerRA` evaluates to false. | Attestation parameters (like device state) are completely uncoupled from the TLS session identity. |
 | **Server Authentication** | `ClientFinishedWithID ==> PreServerFinishedWithID` evaluates to false. | MitM is viable. If Web PKI CA trust is removed or compromised, the protocol offers zero defense against server impersonation. |
-| **Claim Freshness & Attribution** | `AcceptedRdata ==> SentRdata` evaluates to false. | Per-session measurement freshness is invalidated. The Relying Party accepts measurements harvested from past or foreign sessions, allowing untrusted machines to claim valid reference states. |
-| **Evidence Delivery Authenticity** | `ClientConn ==> Sent` evaluates to false. | Evidence provenance is broken. An adversary can forward or substitute genuine attestation tokens, binding the connection to evidence the peer never sent. |
+| **Claim Freshness & Attribution** | `AcceptedRdata ==> SentRdata` evaluates to false. | Per-session measurement freshness per [RFC9334](https://www.rfc-editor.org/rfc/rfc9334.html#name-freshness) is invalidated. The Relying Party accepts measurements harvested from past or foreign sessions, allowing untrusted machines to claim valid reference states regardless of expiry. |
+| **Evidence Delivery Authenticity** | `ClientConn ==> Sent` evaluates to false. | Evidence provenance is broken. An adversary can forward or substitute genuine attestation tokens, binding the connection to evidence the peer never asserted. |
 | **Application Traffic Secrecy** | `attacker(kc) ==> LeakedEK` evaluates to false. | Transport confidentiality collapses. The adversary negotiates the TLS session directly with their own keys, holding application traffic secrets (`kc`) in the clear without compromising the TEE. |
-| **Composite State Synchronization** | `ClientComp ==> PreServerComp` evaluates to false. | The protocol establishes a chimeric session state, binding lower-layer adversary TLS parameters to upper-layer legitimate attestation evidence. |
+| **Composite State Synchronization** | `ClientComp ==> PreServerComp` evaluates to false. | The protocol establishes a spliced session state, binding lower-layer adversary TLS parameters to upper-layer legitimate attestation evidence. |
 
 #### Detailed Breakdown of Cascading Failures
 
@@ -96,9 +96,9 @@ The RATS architecture distinguishes two primary conveyance models based on where
 
 * **Background-Check Model**: The Attester produces Evidence dynamically during connection establishment, allowing a fresh session nonce or transcript checkpoint to be embedded directly into the hardware quote at origin.
 
-* **Passport Model**: Evidence is appraised asynchronously out-of-band by an off-path Verifier. The resulting Attestation Result (AR) is signed by the Verifier (`pubARK`), cached by the Attester, and subsequently presented across multiple transport connections to reduce handshake latency.
+* **Passport Model**: Evidence is appraised asynchronously out-of-band by an off-path Verifier. The resulting Attestation Result (AR) is signed by the Verifier (`pubARK`), cached by the Attester, and subsequently presented across multiple transport connections to reduce transport latency.
 
-Because an Attestation Result in the Passport model is pre-computed, the token itself cannot carry a session-specific nonce from an uninitiated TLS handshake. Freshness cannot be generated at origin; it must be injected at the transport wire.
+Because an Attestation Result in the Passport model is pre-computed, the token itself cannot carry a session-specific nonce from an uninitiated TLS handshake. Freshness cannot be generated at origin; it must be established at the transport wire.
 
 RFC 9261 accomplishes this by executing a live Proof-of-Possession flight. Even though the Attestation Result is static, the `CertificateVerify` signature generated by `privEK` is computed dynamically over the active session's transcript. This transforms the static, cached credential into an ephemeral, connection-bound assertion.
 
