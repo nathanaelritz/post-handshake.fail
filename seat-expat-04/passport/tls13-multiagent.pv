@@ -1,11 +1,29 @@
+(* 
+Copyright 2017 Bhargavan et al.
+Copyright 2026 Sardar et al.
+Copyright 2026 Nathanael Ritz.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*)
+
 (* Run as follows with subfolder <traces>:
-proverif205 -lib tls-lib-simple.pvl -html traces tls13-multiagent.pv 2>&1 | tee log.txt
+proverif205 -lib tls-lib-simple.pvl -lib queries.pvl -html traces tls13-multiagent.pv 2>&1 | tee log.txt
 *)
 
 (* 
 Summary: 
   Server's identity: ID_S associated with pubLTK
-  Key associated with VM identity: pubEK (Note: initially unknown; after successful attestation)
+  Key associated with VM identity: pubEK (Note: stored within a cached_AR pre-generated from previous attestation)
   General organization for modeling: (ID_S,pubLTK,pubAK,pubEK)
 
 Details:
@@ -149,4 +167,3 @@ process
   | !(LCA(privCA))
   
   | !(SendBadElement)
-

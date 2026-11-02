@@ -1,3 +1,21 @@
+(* 
+Copyright 2017 Bhargavan et al.
+Copyright 2026 Sardar et al.
+Copyright 2026 Nathanael Ritz.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*)
+
 (********************************************************)
 (*  Security and Threat Model *)
 (********************************************************)
@@ -296,6 +314,8 @@ event Conveyed(bitstring).
 event Appraised(bitstring).
 event ClientConn(bitstring).
 
+event AttackerControlsHSK(ae_key,ae_key).
+
 event ClientOffersHash(random,hash_alg).
 event ClientOffersKEX(random,kex_alg).
 event ClientOffersEvType(random,ev_typ).
@@ -529,248 +549,7 @@ reduc forall phdata:bitstring, k:bitstring;
 fun ae2b(ae_key): bitstring [data, typeConverter].
 fun r2b(random): bitstring [data, typeConverter].
 
-(**********************************************************************)
-(* Sanity Checks (Reachability props): should all be false (confirms event is reachable) *)
-(**********************************************************************)
-
-query idS, idXS: identity, gxy:bitstring;
-  (* should be false (confirms both events are reachable)
-  i.e., there exists a trace where *both* ServerID and ClientID 
-  are reachable with a shared/common gxy *)
-  (event(ServerID(idS,gxy)) &&
-   event(ClientID(idXS,gxy)))
-.
-
-query cr:random, sr:random,
-      psk:preSharedKey, p:pubkey, e:element,
-      offer:params, mode:params, pubLTK:pubkey,
-      kc:ae_key,ks:ae_key,ems:bitstring,rms:bitstring;
-
-      (* should be false (confirms event is reachable) *)
-      event(ClientFinished(pubLTK,psk,cr,sr,offer,mode,kc,ks,ems,rms)) ==> false;
-      event(ServerFinished(cr,sr,psk,p,offer,mode,kc,ks,ems,rms)) ==> false
-.
-
-query cr,sr,cr',sr':random, psk:preSharedKey, ID_S:identity,
-      pubCA,pubLTK,pubEK,pubAK:pubkey, p:pubkey, e:element, offer,mode:params,
-      kc,ks:ae_key,ems,rms:bitstring;
-
-      (* should be false (confirms event is reachable) *)
-      event(ClientFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr)) &&
-      event(PreServerFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr)) ==> false
-    ;
-
-    (*
-    Goal: Events are reachable in the absence of an attacker.
-      An honest execution path for these events exists without any weakness (e.g.,leakage). 
-      Should be false (Protocol can run without any attacker interference (by excluding all weaknesses)).
-    Formalization: ClientFinished && ServerFinished ==> All weaknesses
-    *)
-      event(ClientFinished(pubLTK,psk,cr,sr,offer,mode,kc,ks,ems,rms)) &&
-      event(ServerFinished(cr,sr,psk,p,offer,mode,kc,ks,ems,rms)) ==>
-      event(ServerChoosesKEX(cr,sr,DHE_13(WeakDH,e))) ||
-      event(ServerChoosesHash(cr',sr',WeakHash)) ||
-      event(SentBadElement) ||
-      event(LeakedAK(pubAK)) ||
-      event(LeakedEK(pubEK)) ||
-      event(LeakedLTK(pubLTK)) ||
-      event(LeakedCA(pubCA))
-    ;
-
-    (*
-    Goal: Events are reachable in the absence of an attacker.
-      Should be false (Protocol can run without any attacker interference (by excluding all weaknesses)).
-    Formalization: ClientFinRecent1WayAgr && PreServerFinRecent1WayAgr ==> All weaknesses
-    *)
-      event(ClientFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr)) &&
-      event(PreServerFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr)) ==>
-      event(ServerChoosesKEX(cr,sr,DHE_13(WeakDH,e))) ||
-      event(ServerChoosesHash(cr',sr',WeakHash)) ||
-      event(SentBadElement) ||
-      event(LeakedAK(pubAK)) ||
-      event(LeakedEK(pubEK)) ||
-      event(LeakedLTK(pubLTK)) ||
-      event(LeakedCA(pubCA))
-    ;
-
-    (*
-    TLS-Ga: Recent One-way injective agreement
-    Counterexample without typical TLS 1.3 assumption of strong cryptography
-    Result: should be false (sanity check)
-    *)
-      inj-event(ClientFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr)) ==>
-      inj-event(PreServerFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr))
-    ;
-
-    (*
-    TLS-Gb: Recent One-way injective agreement
-    Additional parameters to One-way injective agreement: cr,sr
-    Adds agreement over nonces
-    Result: false without accounting for CA trust
-    *)
-      inj-event(ClientFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr)) ==>
-      inj-event(PreServerFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr)) ||
-      event(ServerChoosesKEX(cr,sr,DHE_13(WeakDH,e))) ||
-      event(ServerChoosesHash(cr',sr',WeakHash)) ||
-      event(SentBadElement) ||
-      event(LeakedLTK(pubLTK))
-    ;
-
-    (*
-    TLS-Gc: Recent One-way injective agreement
-    Additional parameters to One-way injective agreement: cr,sr
-    Adds agreement over nonces
-    Result: false without accounting for CA trust
-    *)
-      inj-event(ClientFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr)) ==>
-      inj-event(PreServerFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr)) ||
-      event(ServerChoosesKEX(cr,sr,DHE_13(WeakDH,e))) ||
-      event(ServerChoosesHash(cr',sr',WeakHash)) ||
-      event(SentBadElement) ||
-      event(LeakedLTK(pubLTK)) ||
-      event(LeakedCA(pubCA))
-.
-
-(**********************************************************************)
-(* Relay attacks queries *)
-(**********************************************************************)
-
-(* Reachability *)
-query ev:bitstring,gxy:bitstring;
-      event(ClientStateEv(ev,gxy)) &&
-      event(ServerStateEv(ev,gxy))
-.
-
-query ev:bitstring,kch:ae_key;
-      event(ClientStateEvKch(ev,kch)) &&
-      event(ServerStateEvKch(ev,kch))
-.
-
-query ev:bitstring,kc:ae_key;
-      event(ClientStateEvKc(ev,kc)) &&
-      event(ServerStateEvKc(ev,kc))
-.
-
-(**********************************************************************)
-(* Binding *)
-(*
-Goal G1: Binding Evidence to TLS session: Evidence should not be usable in
-  other TLS sessions, even if they are between the same endpoints.
-  (Not binding to endpoints because multiple sessions of endpoints are possible)
-3 levels of binding to TLS session: 
-  L1. gxy (gx,gy)
-  L2. kch (up to ServerHello)
-  L3. kc (up to ServerFinished): may include ID_S in Certificate message
-  L1 <= L2 <= L3
-Formalization: Same evidence is not accepted by two different TLS sessions.
-  TLS session identified by gxy. Trace should not contain:
-  Client(ev1,gxy1); Server(ev1,gxy2);
-  (* Informal: If they see the same evidence, they should be in the same session *)
-Parameters: Quote instead of dev_state
-  ds = ev, gxy
-  server identity not a part of the query because that is covered by G-C2
-Events: 
-  ServerStateEv after verifying CFin.
-  Rationale: Both endpoints have accepted the connection with the same evidence. 
-Result: true for Binder #3,5,7; and false otherwise
-*)
-query ev:bitstring,gxy1:bitstring,gxy2:bitstring,
- pubEK:pubkey,dev_state:bitstring,quote:bitstring,
-      cr:random, sr:random, cr':random, sr':random,
-      ID:identity,pubLTK:pubkey,pubAK:pubkey,
-      psk:preSharedKey, e:element,
-      offer:params, mode:params, ID_S:identity,
-      kc:ae_key,ks:ae_key,ems:bitstring,rms:bitstring;
-      event(ClientStateEv(ev,gxy1)) &&
-      event(ServerStateEv(ev,gxy2)) ==>
-      (gxy1 = gxy2)
-.
-
-(*
-Goal G2: Binding to client_write_key (kch) derived from handshake traffic secret (htsc) 
-Rationale: It has log_SH in addition to gxy
-Result: false for all except our proposed
-*)
-query ev:bitstring,kch1:ae_key,kch2:ae_key;
-      event(ClientStateEvKch(ev,kch1)) &&
-      event(ServerStateEvKch(ev,kch2)) ==>
-      (kch1 = kch2)
-.
-
-
-(* 
-Goal G3: w.r.t. client_write_key (kc) for application data derived from client_application_traffic_secret_0 (atsc) 
-Rationale: It has transcript hash up to log_SF (vs. log_SH in above property).
-*)
-query ev:bitstring,kc1:ae_key,kc2:ae_key;
-      event(ClientStateEvKc(ev,kc1)) &&
-      event(ServerStateEvKc(ev,kc2)) ==>
-      (kc1 = kc2)
-.
-
-query ev,ev1,ev2:bitstring,gxy1:bitstring,gxy2:bitstring,
-      pubEK:pubkey,dev_status1,dev_status2:measurements,quote:bitstring,
-      cr:random, sr:random, cr':random, sr':random,
-      ID,ID1,ID2:identity,pubLTK:pubkey,pubAK:pubkey,
-      psk:preSharedKey, e:element,
-      offer:params, mode:params, ID_S:identity,
-      kc,kc1,kc2,ks:ae_key,ems:bitstring,rms:bitstring;
-
-      (* Full session with kc/ev correlated *)
-        (
-          event(ClientComp(ID,pubLTK,psk,offer,mode,kc1,ks,ems,rms,cr,sr,pubEK,dev_status1)) &&
-          event(ClientStateEvKc(ev1,kc1)) 
-        )
-            && (* Correlation *)
-        (
-          event(PreServerComp(ID,pubLTK,psk,offer,mode,kc2,ks,ems,cr,sr,pubEK,dev_status2)) &&
-          event(ServerStateEvKc(ev2,kc2))
-        )
-        (* Result: true. *)
-        ==> ((kc1,ev1) = (kc2,ev2))
-.
-*)
-
-(**********************************************************************)
-(* Agreement of composition (RA + TLS) parameters *)
-(**********************************************************************)
-(* Property G-C2: Composition Property for Relay attack
-Goal: If the client finished the session with RA and TLS session parameters, 
-            it must have started with the server having exactly the same RA and TLS session parameters 
-            as long as privAK is not leaked ...
-Events: ClientComp is placed when Client is ready to establish connection (just before sending ClientFinished); 
-        PreServerComp is placed just before sending ServerFinished
-Parameters of agreement: Combines the parameters of agreement from RA property (G-RA) and TLS property (G-TLS)
-*)
-query pubEK:pubkey,dev_state,dev_state1,dev_state2:measurements,quote:bitstring,
-      cr:random, sr:random, cr':random, sr':random,
-      ID:identity,pubLTK:pubkey,pubAK:pubkey,
-      psk:preSharedKey, e:element, pubCA,pubISV:pubkey,
-      offer:params, mode:params, ID_S:identity,
-      kc:ae_key,ks:ae_key,ems:bitstring,rms:bitstring;
-
-    (* should be false (confirms events are reachable) *)
-      event(ClientEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1)) &&
-      event(ServerEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1))
-    ;
-
-    (* Result: false assuming EK is compromised *)
-      inj-event(ClientEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1)) ==>
-      inj-event(ServerEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1))
-    ;
-
-    (* Result: false based on seat-expat-04 Section 4 (Assuming EK is secure, but unchecked)  *)
-      inj-event(ClientEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1)) ==>
-      inj-event(ServerEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1))
-      || event(LeakedEK(pubEK))
-.
-
-
-(********************************************************)
-restriction cr,sr,cr',sr':random,e:element;
-  event(ServerChoosesKEX(cr,sr,DHE_13(WeakDH,e)));
-  event(ServerChoosesHash(cr',sr',WeakHash)) ==> false.
-(********************************************************)
+(* See queries.pvl for full set of queries against this model *)
 
 (********************************************************)
 (* Client Authenticator Process                         *)
@@ -999,6 +778,10 @@ let Server(ID_S:identity, privLTK: privkey, privAK: privkey, privEK: privkey,ID_
 
   let gxy = e2b(dh_exp(g,gx,y)) in  (* represents (EC)DHE in Key Derivation [Sec. 7.1, RFC8446] *)
   let (hs:bitstring,kch:ae_key,ksh:ae_key,kcm:mac_key,ksm:mac_key) = kdf_hs(es,gxy,log_SH) in
+
+  (* https://github.com/Inria-Prosecco/reftls/blob/a71a74538e8af80dec5f6719f9e726b8c654468a/pv/tls-lib-rfc8446.pvl#L598 *)
+  out(io,(kch,ksh)); (* explictly expose derived handshake keys, same as upstream reftls model *)
+  event AttackerControlsHSK(kch,ksh);
 
   let pubLTK = pk(privLTK) in
   event ServerID(ID_S,gxy);

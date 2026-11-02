@@ -1,0 +1,45 @@
+--------------------------------------------------------------
+Verification summary:
+
+Query(ies):
+ - Query not (event(ServerID(idS,gxy_2)) && event(ClientID(idXS,gxy_2))) is false.
+ - Query not event(ClientFinished(pubLTK_8,psk_2,cr_3,sr_3,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2)) is false.
+ - Query not event(ServerFinished(cr_3,sr_3,psk_2,p,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2)) is false.
+ - Query not (event(ClientFinRecent1WayAgr(ID_S_4,pubLTK_8,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2,cr_3,sr_3)) && event(PreServerFinRecent1WayAgr(ID_S_4,pubLTK_8,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,cr_3,sr_3))) is false.
+ - Query event(ClientFinRecent1WayAgr(ID_S_4,pubLTK_8,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2,cr_3,sr_3)) && event(PreServerFinRecent1WayAgr(ID_S_4,pubLTK_8,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,cr_3,sr_3)) ==> event(LeakedAK(pubAK_5)) || event(LeakedEK(pubEK_6)) || event(LeakedLTK(pubLTK_8)) || event(LeakedCA(pubCA_1)) is false.
+ - Query inj-event(ClientFinRecent1WayAgr(ID_S_4,pubLTK_8,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2,cr_3,sr_3)) ==> inj-event(PreServerFinRecent1WayAgr(ID_S_4,pubLTK_8,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,cr_3,sr_3)) is false.
+ - Query inj-event(ClientFinRecent1WayAgr(ID_S_4,pubLTK_8,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2,cr_3,sr_3)) ==> inj-event(PreServerFinRecent1WayAgr(ID_S_4,pubLTK_8,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,cr_3,sr_3)) || event(LeakedLTK(pubLTK_8)) is false.
+ - Query inj-event(ClientFinRecent1WayAgr(ID_S_4,pubLTK_8,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2,cr_3,sr_3)) ==> inj-event(PreServerFinRecent1WayAgr(ID_S_4,pubLTK_8,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,cr_3,sr_3)) || event(LeakedLTK(pubLTK_8)) || event(LeakedCA(pubCA_1)) is true.
+ - Query event(ClientEAComp(ID_S_4,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2,cr_3,sr_3,pubEK_6,pubAK_5,dev_state1)) && event(ServerEAComp(ID_S_4,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2,cr_3,sr_3,pubEK_6,pubAK_5,dev_state1)) ==> event(LeakedAK(pubAK_5)) || event(LeakedEK(pubEK_6)) || event(LeakedLTK(pubLTK_8)) || event(LeakedCA(pubCA_1)) is false.
+ - Query not (event(ClientStateEv(ev,gxy_2)) && event(ServerStateEv(ev,gxy_2))) is false.
+ - Query not (event(ClientStateEvKch(ev,kch_4)) && event(ServerStateEvKch(ev,kch_4))) is false.
+ - Query not (event(ClientStateEvKc(ev,kc_4)) && event(ServerStateEvKc(ev,kc_4))) is false.
+ - Query event(ClientStateEv(ev,gxy1)) && event(ServerStateEv(ev,gxy2)) ==> gxy1 = gxy2 is false.
+ - Query event(ClientStateEvKch(ev,kch1)) && event(ServerStateEvKch(ev,kch2)) ==> kch1 = kch2 is false.
+ - Query event(ClientStateEvKc(ev,kc1)) && event(ServerStateEvKc(ev,kc2)) ==> kc1 = kc2 is false.
+ - Query event(ClientComp(ID,pubLTK_8,psk_2,offer_2,mode_2,kc1,ks_4,ems_4,rms_2,cr_3,sr_3,pubEK_6,dev_status1_2)) && event(ClientStateEvKc(ev1,kc1)) && event(PreServerComp(ID,pubLTK_8,psk_2,offer_2,mode_2,kc2,ks_4,ems_4,cr_3,sr_3,pubEK_6,dev_status2)) && event(ServerStateEvKc(ev2,kc2)) ==> (kc1,ev1) = (kc2,ev2) is true.
+ - Query not (event(ClientEAComp(ID_S_4,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2,cr_3,sr_3,pubEK_6,pubAK_5,dev_state1)) && event(ServerEAComp(ID_S_4,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2,cr_3,sr_3,pubEK_6,pubAK_5,dev_state1))) is false.
+ - Query inj-event(ClientEAComp(ID_S_4,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2,cr_3,sr_3,pubEK_6,pubAK_5,dev_state1)) ==> inj-event(ServerEAComp(ID_S_4,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2,cr_3,sr_3,pubEK_6,pubAK_5,dev_state1)) is false.
+ - Query inj-event(ClientEAComp(ID_S_4,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2,cr_3,sr_3,pubEK_6,pubAK_5,dev_state1)) ==> inj-event(ServerEAComp(ID_S_4,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2,cr_3,sr_3,pubEK_6,pubAK_5,dev_state1)) || event(LeakedEK(pubEK_6)) is false.
+ - Query event(ServerID(idS,gxy_2)) && event(ClientID(idXS,gxy_2)) ==> idS = idXS || event(SentBadElement) || event(LeakedAK(pubAK_5)) is false.
+ - Query event(ServerID(idS,gxy_2)) && event(ClientID(idXS,gxy_2)) ==> idS = idXS || event(SentBadElement) || event(LeakedLTK(pubLTK_8)) || event(LeakedCA(pubCA_1)) is true.
+ - Query inj-event(ClientRA(pubAK_5,pubEK_6,dev_state,ev)) ==> inj-event(ServerRA(ID,pubLTK_8,pubAK_5,pubEK_6,dev_state,ev)) || event(LeakedAK(pubAK_5)) is false.
+ - Query inj-event(ClientRA(pubAK_5,pubEK_6,dev_state,ev)) ==> inj-event(ServerRA(ID,pubLTK_8,pubAK_5,pubEK_6,dev_state,ev)) || event(LeakedEK(pubEK_6)) is false.
+ - Query inj-event(AcceptedRdata(dev_state)) ==> inj-event(SentRdata(dev_state)) || event(LeakedAK(pubAK_5)) is false.
+ - Query inj-event(AcceptedRdata(dev_state)) ==> inj-event(SentRdata(dev_state)) || event(LeakedEK(pubEK_6)) is false.
+ - Query inj-event(ClientConn(ev)) ==> inj-event(Sent(ev)) || event(LeakedAK(pubAK_5)) is false.
+ - Query inj-event(ClientConn(ev)) ==> inj-event(Sent(ev)) || event(LeakedEK(pubEK_6)) is false.
+ - Query inj-event(ClientFinishedWithID(ID_S_4,pubLTK_8,pubAK_5,psk_2,cr_3,sr_3,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2)) ==> inj-event(PreServerFinishedWithID(ID_S_4,pubLTK_8,pubAK_5,psk_2,cr_3,sr_3,offer_2,mode_2,kc_4,ks_4,ems_4)) is false.
+ - Query inj-event(ClientFinishedWithID(ID_S_4,pubLTK_8,pubAK_5,psk_2,cr_3,sr_3,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2)) ==> inj-event(PreServerFinishedWithID(ID_S_4,pubLTK_8,pubAK_5,psk_2,cr_3,sr_3,offer_2,mode_2,kc_4,ks_4,ems_4)) || event(LeakedEK(pubEK_6)) is false.
+ - Query inj-event(ClientComp(ID_S_4,pubLTK_8,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2,cr_3,sr_3,pubEK_6,dev_state)) ==> inj-event(PreServerComp(ID_S_4,pubLTK_8,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,cr_3,sr_3,pubEK_6,dev_state)) || event(LeakedAK(pubAK_5)) is false.
+ - Query inj-event(ClientComp(ID_S_4,pubLTK_8,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2,cr_3,sr_3,pubEK_6,dev_state)) ==> inj-event(PreServerComp(ID_S_4,pubLTK_8,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,cr_3,sr_3,pubEK_6,dev_state)) || event(LeakedEK(pubEK_6)) is false.
+ - Query not (event(AttackerControlsHSK(kch_4,ksh_4)) && event(ClientStateEvKch(ev,kch_4)) && attacker(kch_4)) is false.
+ - Query event(ClientRANew(NULL_ID,NULL_pubkey,pubAK_5,pubEK_6,dev_status1_2,ev)) && event(ClientFin1WayAgr(ID,pubLTK_8,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2)) && event(ClientStateEvKc(ev,kc_4)) && attacker(kc_4) ==> event(LeakedAK(pubAK_5)) is false.
+ - Query event(ClientRANew(NULL_ID,NULL_pubkey,pubAK_5,pubEK_6,dev_status1_2,ev)) && event(ClientFin1WayAgr(ID,pubLTK_8,psk_2,offer_2,mode_2,kc_4,ks_4,ems_4,rms_2)) && event(ClientStateEvKc(ev,kc_4)) && attacker(kc_4) ==> event(LeakedEK(pubEK_6)) is false.
+Associated restriction(s):
+ - Restriction
+   not event(ServerChoosesKEX(cr_3,sr_3,DHE_13(WeakDH,e)))
+   not event(ServerChoosesHash(cr',sr',WeakHash))
+ in process 1.
+
+--------------------------------------------------------------

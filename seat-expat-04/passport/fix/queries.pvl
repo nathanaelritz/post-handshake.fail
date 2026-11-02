@@ -1,0 +1,365 @@
+(* 
+Copyright 2017 Bhargavan et al.
+Copyright 2026 Sardar et al.
+Copyright 2026 Nathanael Ritz.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*)
+
+(********************************************************)
+restriction cr,sr,cr',sr':random,e:element;
+  event(ServerChoosesKEX(cr,sr,DHE_13(WeakDH,e)));
+  event(ServerChoosesHash(cr',sr',WeakHash)) ==> false.
+(********************************************************)
+
+(**********************************************************************)
+(* Sanity Checks (Reachability props): should all be false (confirms event is reachable) *)
+(**********************************************************************)
+
+query idS, idXS: identity, gxy:bitstring;
+  (* should be false (confirms both events are reachable)
+  i.e., there exists a trace where *both* ServerID and ClientID 
+  are reachable with a shared/common gxy *)
+  (event(ServerID(idS,gxy)) &&
+   event(ClientID(idXS,gxy)))
+.
+
+query cr:random, sr:random,
+      psk:preSharedKey, p:pubkey, e:element,
+      offer:params, mode:params, pubLTK:pubkey,
+      kc:ae_key,ks:ae_key,ems:bitstring,rms:bitstring;
+
+      (* should be false (confirms event is reachable) *)
+      event(ClientFinished(pubLTK,psk,cr,sr,offer,mode,kc,ks,ems,rms)) ==> false;
+      event(ServerFinished(cr,sr,psk,p,offer,mode,kc,ks,ems,rms)) ==> false
+.
+
+query cr,sr,cr',sr':random, psk:preSharedKey, ID_S:identity,
+      pubCA,pubLTK,pubEK,pubAK:pubkey, p:pubkey, e:element, offer,mode:params,
+      kc,ks:ae_key,ems,rms:bitstring;
+
+      (* should be false (confirms event is reachable) *)
+      event(ClientFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr)) &&
+      event(PreServerFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr)) ==> false
+    ;
+
+    (*
+    Goal: Events are reachable in the absence of an attacker.
+      Should be false (Protocol can run without any attacker interference (by excluding all weaknesses)).
+    Formalization: ClientFinRecent1WayAgr && PreServerFinRecent1WayAgr ==> All weaknesses
+    *)
+      event(ClientFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr)) &&
+      event(PreServerFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr)) ==>
+      event(LeakedAK(pubAK)) ||
+      event(LeakedEK(pubEK)) ||
+      event(LeakedLTK(pubLTK)) ||
+      event(LeakedCA(pubCA))
+    ;
+
+    (*
+    TLS-Ga: Recent One-way injective agreement
+    Counterexample without typical TLS 1.3 assumption of strong cryptography
+    Result: should be false (sanity check)
+    *)
+      inj-event(ClientFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr)) ==>
+      inj-event(PreServerFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr))
+    ;
+
+    (* Result: false *)
+      inj-event(ClientFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr)) ==>
+      inj-event(PreServerFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr)) ||
+      event(LeakedLTK(pubLTK))
+    ;
+
+    (* Result: true *)
+      inj-event(ClientFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr)) ==>
+      inj-event(PreServerFinRecent1WayAgr(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr)) ||
+      event(LeakedLTK(pubLTK)) ||
+      event(LeakedCA(pubCA))
+.
+
+(*
+Goal: Events are reachable in the absence of an attacker for EA handshake portion.
+  Should be false (Protocol can run without any attacker interference (by excluding all weaknesses)).
+Formalization: ClientEAComp && ServerEAComp ==> All weaknesses
+*)
+query pubEK:pubkey,dev_state,dev_state1,dev_state2:measurements,quote:bitstring,
+      cr:random, sr:random, cr':random, sr':random,
+      ID:identity,pubLTK:pubkey,pubAK:pubkey,
+      psk:preSharedKey, e:element, pubCA,pubISV:pubkey,
+      offer:params, mode:params, ID_S:identity,
+      kc:ae_key,ks:ae_key,ems:bitstring,rms:bitstring;
+
+      event(ClientEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1)) &&
+      event(ServerEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1)) ==>
+      event(LeakedAK(pubAK)) ||
+      event(LeakedEK(pubEK)) ||
+      event(LeakedLTK(pubLTK)) ||
+      event(LeakedCA(pubCA))
+.
+
+(**********************************************************************)
+(* Relay attacks queries *)
+(**********************************************************************)
+
+(* Reachability *)
+query ev:bitstring,gxy:bitstring;
+      event(ClientStateEv(ev,gxy)) &&
+      event(ServerStateEv(ev,gxy))
+.
+
+query ev:bitstring,kch:ae_key;
+      event(ClientStateEvKch(ev,kch)) &&
+      event(ServerStateEvKch(ev,kch))
+.
+
+query ev:bitstring,kc:ae_key;
+      event(ClientStateEvKc(ev,kc)) &&
+      event(ServerStateEvKc(ev,kc))
+.
+
+(**********************************************************************)
+(* Binding *)
+(**********************************************************************)
+
+(* Result: false *)
+query ev:bitstring,gxy1:bitstring,gxy2:bitstring,
+ pubEK:pubkey,dev_state:measurements,quote:bitstring,
+      cr:random, sr:random, cr':random, sr':random,
+      ID:identity,pubLTK:pubkey,pubAK:pubkey,
+      psk:preSharedKey, e:element,
+      offer:params, mode:params, ID_S:identity,
+      kc:ae_key,ks:ae_key,ems:bitstring,rms:bitstring;
+      event(ClientStateEv(ev,gxy1)) &&
+      event(ServerStateEv(ev,gxy2)) ==>
+      (gxy1 = gxy2)
+.
+
+(* Result: false *)
+query ev:bitstring,kch1:ae_key,kch2:ae_key;
+      event(ClientStateEvKch(ev,kch1)) &&
+      event(ServerStateEvKch(ev,kch2)) ==>
+      (kch1 = kch2)
+.
+
+(* Result: false *)
+query ev:bitstring,kc1:ae_key,kc2:ae_key;
+      event(ClientStateEvKc(ev,kc1)) &&
+      event(ServerStateEvKc(ev,kc2)) ==>
+      (kc1 = kc2)
+.
+
+(* Result: true *)
+query ev,ev1,ev2:bitstring,gxy1:bitstring,gxy2:bitstring,
+      pubEK:pubkey,dev_status1,dev_status2:measurements,quote:bitstring,
+      cr:random, sr:random, cr':random, sr':random,
+      ID,ID1,ID2:identity,pubLTK:pubkey,pubAK:pubkey,
+      psk:preSharedKey, e:element,
+      offer:params, mode:params, ID_S:identity,
+      kc,kc1,kc2,ks:ae_key,ems:bitstring,rms:bitstring;
+
+      (* Full session with kc/ev correlated *)
+        (
+          event(ClientComp(ID,pubLTK,psk,offer,mode,kc1,ks,ems,rms,cr,sr,pubEK,dev_status1)) &&
+          event(ClientStateEvKc(ev1,kc1)) 
+        )
+            && (* Correlation *)
+        (
+          event(PreServerComp(ID,pubLTK,psk,offer,mode,kc2,ks,ems,cr,sr,pubEK,dev_status2)) &&
+          event(ServerStateEvKc(ev2,kc2))
+        )
+        ==> ((kc1,ev1) = (kc2,ev2))
+.
+
+(**********************************************************************)
+(* Agreement of composition (RA + TLS) parameters *)
+(**********************************************************************)
+
+query pubEK:pubkey,dev_state,dev_state1,dev_state2:measurements,quote:bitstring,
+      cr:random, sr:random, cr':random, sr':random,
+      ID:identity,pubLTK:pubkey,pubAK:pubkey,
+      psk:preSharedKey, e:element, pubCA,pubISV:pubkey,
+      offer:params, mode:params, ID_S:identity,
+      kc:ae_key,ks:ae_key,ems:bitstring,rms:bitstring;
+
+    (* should be false (confirms events are reachable) *)
+      event(ClientEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1)) &&
+      event(ServerEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1))
+    ;
+
+    (* Result: false *)
+      inj-event(ClientEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1)) ==>
+      inj-event(ServerEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1))
+    ;
+
+    (* Result: required true *)
+      inj-event(ClientEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1)) ==>
+      inj-event(ServerEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1))
+      || event(LeakedEK(pubEK))
+.
+
+(* Property G-TLS1: Server Identity property to protect against diversion attacks *)
+query idS,idXS:identity,pubLTK:pubkey,pubAK:pubkey,pubEK:pubkey,
+  gxy:bitstring,
+  cr:random, sr:random, cr':random, sr':random,
+  psk:preSharedKey, p:pubkey, e:element,
+  offer:params, mode:params, pubCA,pubISV:pubkey,
+  kc:ae_key,ks:ae_key,ems:bitstring,rms:bitstring;  
+
+(* Result: false *)
+  (event(ServerID(idS,gxy)) &&
+  event(ClientID(idXS,gxy))) ==>
+  (idS = idXS) ||
+  event(SentBadElement) ||
+  event(LeakedAK(pubAK))
+;
+
+(* Result: true *)
+  (event(ServerID(idS,gxy)) &&
+  event(ClientID(idXS,gxy))) ==>
+  (idS = idXS) ||
+  event(SentBadElement) ||
+  event(LeakedLTK(pubLTK)) ||
+  event(LeakedCA(pubCA))
+.
+
+(**********************************************************************)
+(* Auxiliary Properties for G-RA2 *)
+(**********************************************************************)
+
+query pubEK:pubkey,dev_state:measurements, ev:bitstring,ID:identity,pubLTK:pubkey,pubAK:pubkey,
+      cr,cr':random, sr,sr':random, e:element, pubCA,pubISV:pubkey;
+
+(* Result: false *)
+      event(ClientRA(pubAK,pubEK,dev_state,ev)) ==>
+      inj-event(ServerRA(ID,pubLTK,pubAK,pubEK,dev_state,ev)) ||
+      event(LeakedAK(pubAK)) 
+;
+
+(* Result: required true *)
+      event(ClientRA(pubAK,pubEK,dev_state,ev)) ==>
+      inj-event(ServerRA(ID,pubLTK,pubAK,pubEK,dev_state,ev)) ||
+      event(LeakedEK(pubEK))
+.
+
+query dev_state:measurements, cr:random, sr:random, e:element,
+      ID:identity,pubLTK:pubkey,pubAK:pubkey,pubEK:pubkey,pubCA,pubISV:pubkey;
+
+(* Result: false *)
+  inj-event(AcceptedRdata(dev_state)) ==>
+  inj-event(SentRdata(dev_state)) ||
+  event(LeakedAK(pubAK))
+  ;
+
+(* Result: required true *)
+  inj-event(AcceptedRdata(dev_state)) ==>
+  inj-event(SentRdata(dev_state)) ||
+  event(LeakedEK(pubEK))
+.
+
+query ev:bitstring, cr:random, sr:random, e:element,
+      ID:identity,pubLTK:pubkey,pubAK:pubkey,pubEK:pubkey,pubCA,pubISV:pubkey;
+
+(* Result: false *)
+      inj-event(ClientConn(ev)) ==>
+      inj-event(Sent(ev)) ||
+      event(LeakedAK(pubAK))
+;
+
+(* Result: required true *)
+      inj-event(ClientConn(ev)) ==>
+      inj-event(Sent(ev)) ||
+      event(LeakedEK(pubEK))
+.
+
+(* Property G-TLS2: Post-Handshake Authenticator Server Authentication *)
+query cr:random, sr:random,
+      ID_S:identity,pubLTK:pubkey,pubAK:pubkey,pubEK:pubkey,
+      psk:preSharedKey, offer:params, mode:params,
+      kc:ae_key,ks:ae_key,ems:bitstring,rms:bitstring;
+
+(* Result: false *)
+  inj-event(ClientFinishedWithID(ID_S,pubLTK,pubAK,psk,cr,sr,offer,mode,kc,ks,ems,rms)) ==>
+  inj-event(PreServerFinishedWithID(ID_S,pubLTK,pubAK,psk,cr,sr,offer,mode,kc,ks,ems))
+;
+
+(* Result: required true *)
+  inj-event(ClientFinishedWithID(ID_S,pubLTK,pubAK,psk,cr,sr,offer,mode,kc,ks,ems,rms)) ==>
+  inj-event(PreServerFinishedWithID(ID_S,pubLTK,pubAK,psk,cr,sr,offer,mode,kc,ks,ems)) ||
+  event(LeakedEK(pubEK))
+.
+
+(**********************************************************************)
+(* Agreement of composition (RA + TLS) parameters *)
+(**********************************************************************)
+
+query pubEK:pubkey,dev_state,dev_state1,dev_state2:measurements,quote:bitstring,
+      cr:random, sr:random, cr':random, sr':random,
+      ID:identity,pubLTK:pubkey,pubAK:pubkey,
+      psk:preSharedKey, e:element, pubCA,pubISV:pubkey,
+      offer:params, mode:params, ID_S:identity,
+      kc:ae_key,ks:ae_key,ems:bitstring,rms:bitstring;
+
+(* Result: false *)     
+      inj-event(ClientComp(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,dev_state)) ==>
+      inj-event(PreServerComp(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr,pubEK,dev_state)) ||
+      event(LeakedAK(pubAK))
+;
+
+(* Result: required true *)
+      inj-event(ClientComp(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,dev_state)) ==>
+      inj-event(PreServerComp(ID_S,pubLTK,psk,offer,mode,kc,ks,ems,cr,sr,pubEK,dev_state)) ||
+      event(LeakedEK(pubEK))
+.
+
+query pubEK:pubkey,dev_status,dev_status1,dev_status2:measurements,quote:bitstring,
+      cr:random, sr:random, cr':random, sr':random,
+      ID:identity,pubLTK:pubkey,pubAK:pubkey, ev: bitstring,
+      psk:preSharedKey, e:element, pubCA,pubISV:pubkey,
+      offer:params, mode:params, ID_S:identity,
+      kc:ae_key,ks:ae_key,kch,ksh:ae_key,ems:bitstring,rms:bitstring;
+
+(*************************************************)
+(* Confirm that attacker *does* have access to 
+   handshake secrets with same evidence in context *)
+(*************************************************)
+
+(* Reachability check (expect false): Confirms that a 
+   trace exists where both parties use kch and the attacker 
+   actively possesses the same kch handshake secret *)
+  attacker(kch) &&
+  ( (* Key Secrecy *)
+    event(AttackerControlsHSK(kch,ksh))
+    && event(ClientStateEvKch(ev,kch))
+  ) ==> false
+;
+
+(* Result: false *)     
+  attacker(kc) && 
+  (    (* Key Secrecy *)
+       event(ClientRANew(NULL_ID,NULL_pubkey,pubAK,pubEK,dev_status1,ev))
+    && event(ClientFin1WayAgr(ID,pubLTK,psk,offer,mode,kc,ks,ems,rms))
+    && event(ClientStateEvKc(ev,kc))
+  ) 
+   ==> event(LeakedAK(pubAK)) 
+;     
+
+(* Result: required true *)
+  attacker(kc) && 
+  (    (* Key Secrecy *)
+       event(ClientRANew(NULL_ID,NULL_pubkey,pubAK,pubEK,dev_status1,ev))
+    && event(ClientFin1WayAgr(ID,pubLTK,psk,offer,mode,kc,ks,ems,rms))
+    && event(ClientStateEvKc(ev,kc))
+  ) 
+   ==> event(LeakedEK(pubEK))  
+.
