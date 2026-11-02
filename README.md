@@ -4,17 +4,24 @@
 
 This report details a critical specification flaw in [Section 4](https://www.ietf.org/archive/id/draft-fossati-seat-expat-04.html#section-4-4.2.1) of `draft-fossati-seat-expat-04` regarding the Passport Model. By omitting the requirement for the Relying Party to cross-check the Authenticator Identity Key (AIK) against the Attestation Result (AR), the current text completely breaks the cryptographic binding between the Attestation Credential and the TLS connection.
 
-Symbolic analysis in ProVerif demonstrates high risk if implementations strictly follow the draft-04 text, and may become vulnerable to **unconstrained cross-connection AR replay** and **full MITM (Machine-in-the-Middle) impersonation**: nullifying the primary security guarantees of Attested TLS.
+Symbolic analysis in ProVerif demonstrates high risk if implementations strictly follow the seat-expat-04 text, and may become vulnerable to **unconstrained cross-connection AR replay** and **full MITM (Machine-in-the-Middle) impersonation**: nullifying the primary security guarantees of Attested TLS.
 
 ---
 
 ####  Background
 
-According to the abstract, Remote Attestation with Exported Authenticators should support both the passport and background check models from the RATS architecture while ensuring that attestation remains bound to the underlying communication channel. Unfortunately, as identified in [Issue #67](https://github.com/tls-attestation/exported-attestation/issues/67#issue-5931968911) and [first reported in July on the SEAT mailing list](https://mailarchive.ietf.org/arch/msg/seat/Xwf2c1jfUWeGgHjWGFliKqtqANM/), the draft provides only the following validation steps for the Passport Model:
+According to the abstract, Remote Attestation with Exported Authenticators should support both the passport and background check models from the RATS architecture while ensuring that attestation remains bound to the underlying communication channel. Unfortunately, as highlighted in [Issue #67](https://github.com/tls-attestation/exported-attestation/issues/67#issue-5931968911), the draft provides only the following validation steps for the Passport Model:
 
 > "Verify the Attestation Result: The Relying Party MUST check that the Attestation Result is correctly signed by the issuing authority and that it meets the Relying Party's security requirements."
 
-Imran Siddique later raised the issue again on [October 19th](https://github.com/tls-attestation/exported-attestation/issues/67#issue-5931968911) and identified that a Relying Party implementation following the passport text would accept "any Attestation Result the Verifier signed, for any AIK, on any connection."
+The initial architectural challenge was shared first shared in [in July on the SEAT mailing list](https://mailarchive.ietf.org/arch/msg/seat/Xwf2c1jfUWeGgHjWGFliKqtqANM/):
+
+> "The challenge the charter requirement gives us when the TLS client is the
+> RP and the TLS server is the Attester is that we do not seem to have a
+> common understanding (let alone a performant approach) for binding a cached
+> Attestation Result (AR) on a per-connection basis."
+
+As Imran Siddique later followed up on [October 19th](https://github.com/tls-attestation/exported-attestation/issues/67#issue-5931968911), it was further clarified that a Relying Party implementation strictly following the passport text found in seat-expat-04 would accept "any Attestation Result the Verifier signed, for any AIK, on any connection."
 
 Certain risks persist if seat-expat continues to advance without integrating the remediation proposed in Issue #67:
 
@@ -24,7 +31,7 @@ Certain risks persist if seat-expat continues to advance without integrating the
 
 ---
 
-#### The Specification Flaw in Draft-04: Cross-Connection AR Replay
+#### The Specification Flaw in seat-expat-04: Cross-Connection AR Replay
 
 Because the specification text does not mandate the binding check, an active attacker can execute the following identity-spoofing attack:
 
@@ -34,7 +41,7 @@ Because the specification text does not mandate the binding check, an active att
 
 3. **Replay**: During the Exported Authenticator post-handshake phase, the Attacker embeds the harvested AR alongside their own `pubEK_attacker` in the Certificate message, and signs the CertificateVerify with their own private key.
 
-4. **Exploitation**: Following Section 4 of draft-04, the Client verifies the Verifier's signature on the AR. It succeeds. The Client accepts the connection.
+4. **Exploitation**: Following Section 4 of seat-expat-04, the Client verifies the Verifier's signature on the AR. It succeeds. The Client accepts the connection.
 
 **Result**: The Client believes it has established a secure session with a Trusted Execution Environment (TEE). In reality, the attacker holds the TLS application traffic secrets.
 
