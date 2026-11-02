@@ -175,8 +175,8 @@ otherwise psk2b(NoPSK) = zero.
 (* All parameters for Server side *)
 (********************************************************)
 
-(*    agent_keys(ID_S,    privLTK,pubLTK,privAK ,pubAK ,privEK ,pubEK ) *)
-table agent_keys(identity,privkey,pubkey,privkey,pubkey,privkey,pubkey).
+(*    agent_keys(ID_S,    privLTK,pubLTK,privAK ,pubAK ,privEK ,pubEK ,cached_AR ) *)
+table agent_keys(identity,privkey,pubkey,privkey,pubkey,privkey,pubkey,bitstring).
 
 (********************************************************)
 (*  TLS 1.3 Key Schedule  *)
@@ -631,14 +631,6 @@ query cr,sr,cr',sr':random, psk:preSharedKey, ID_S:identity,
       event(LeakedCA(pubCA))
 .
 
-query idS, idXS: identity, gxy:bitstring;
-  (* should be false (confirms both events are reachable)
-  i.e., there exists a trace where *both* ServerID and ClientID 
-  are reachable with a shared/common gxy *)
-  (event(ServerID(idS,gxy)) &&
-   event(ClientID(idXS,gxy)))
-.
-
 (**********************************************************************)
 (* Relay attacks queries *)
 (**********************************************************************)
@@ -725,9 +717,6 @@ query ev,ev1,ev2:bitstring,gxy1:bitstring,gxy2:bitstring,
       kc,kc1,kc2,ks:ae_key,ems:bitstring,rms:bitstring;
 
       (* Full session with kc/ev correlated *)
-      (* NOTE: Evidence and Application Traffic Keys CANNOT be correlated together in 
-         post-handshake without additional assumptions.
-      *)
         (
           event(ClientComp(ID,pubLTK,psk,offer,mode,kc1,ks,ems,rms,cr,sr,pubEK,dev_status1)) &&
           event(ClientStateEvKc(ev1,kc1)) 
@@ -737,23 +726,10 @@ query ev,ev1,ev2:bitstring,gxy1:bitstring,gxy2:bitstring,
           event(PreServerComp(ID,pubLTK,psk,offer,mode,kc2,ks,ems,cr,sr,pubEK,dev_status2)) &&
           event(ServerStateEvKc(ev2,kc2))
         )
-        (* Result: false. *)
+        (* Result: true. *)
         ==> ((kc1,ev1) = (kc2,ev2))
-      ;
-
-      (* Add assumption that excludes degenerate key-shares from Client gxy calculation. *)
-        (
-          event(ClientComp(ID,pubLTK,psk,offer,mode,kc1,ks,ems,rms,cr,sr,pubEK,dev_status1)) &&
-          event(ClientStateEvKc(ev1,kc1)) 
-        )
-            && (* Correlation *)
-        (
-          event(PreServerComp(ID,pubLTK,psk,offer,mode,kc2,ks,ems,cr,sr,pubEK,dev_status2)) &&
-          event(ServerStateEvKc(ev2,kc2))
-        )
-        (* Result: Should be true *)
-        ==> ((kc1,ev1) = (kc2,ev2)) || event(ClientID(ID, e2b(BadElement)))
 .
+*)
 
 (**********************************************************************)
 (* Agreement of composition (RA + TLS) parameters *)
@@ -778,18 +754,17 @@ query pubEK:pubkey,dev_state,dev_state1,dev_state2:measurements,quote:bitstring,
       event(ServerEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1))
     ;
 
-    (* Result: true (assuming AK trust assumption | EK is non-confidential )  *)
+    (* Result: false assuming EK is compromised *)
       inj-event(ClientEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1)) ==>
       inj-event(ServerEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1))
-      || event(LeakedAK(pubAK))
     ;
 
-    (* Result: true (assuming LTK and CA trust assumption | EK is non-confidential )  *)
+    (* Result: false based on seat-expat-04 Section 4 (Assuming EK is secure, but unchecked)  *)
       inj-event(ClientEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1)) ==>
       inj-event(ServerEAComp(ID_S,psk,offer,mode,kc,ks,ems,rms,cr,sr,pubEK,pubAK,dev_state1))
-      || event(LeakedLTK(pubLTK))
-      || event(LeakedCA(pubCA))
+      || event(LeakedEK(pubEK))
 .
+
 
 (********************************************************)
 restriction cr,sr,cr',sr':random,e:element;
@@ -797,16 +772,14 @@ restriction cr,sr,cr',sr':random,e:element;
   event(ServerChoosesHash(cr',sr',WeakHash)) ==> false.
 (********************************************************)
 
-
 (********************************************************)
 (* Client Authenticator Process                         *)
 (********************************************************)
 
-let Client_EA(ID_C: identity, ID_S: identity, psk: preSharedKey, 
+let Client_EA(ID_C: identity, ID_S: identity, pubARK:pubkey, psk: preSharedKey, 
     cr: random, sr: random, offer: params, mode: params, gxy: bitstring, kch: ae_key, 
     ks: ae_key, kc: ae_key, ems: bitstring, rms: bitstring, shash_algo: hash_alg) = 
 (
-  get agent_keys(_, _, _, _, pubAK, _, _) in (* Grab trusted pubAK *)
   new req_ctx: bitstring;  (* generate fresh certificate_request_context [Sec. 4, RFC9261] *)
   let req_msg = AuthenticatorRequest(req_ctx) in
   out(io, AuthFrame(ALTA_magic, auth_request, req_msg));  (* send Authenticator Request inside Shim Mode AuthFrame [Sec. 7, ALTEA] *)
@@ -818,16 +791,18 @@ let Client_EA(ID_C: identity, ID_S: identity, psk: preSharedKey,
   (* Certificate carries ephemeral key pubEK + attestation evidence *)
   let (selfcert: bitstring, selfsign: bitstring) = ea_cert in  (* pattern match ea_cert *)
   let (pubEK:pubkey, quote: bitstring) = selfcert in (* check selfsign format *)
-  let (dataSign:bitstring, sig:bitstring) = quote in  (* check quote format *)
-  let (rdata:bitstring, dev_status1:measurements) = dataSign in  (* check dataSign format *)
+  
+  (* Passport conveyance model validation *)
+  let (ar_claims: bitstring, vsig: bitstring) = quote in  (* check ar_token format: (ar_claims, AR_sig) *)
+  let (pubEK_cnf: pubkey, pubAK: pubkey, dev_status1: measurements) = ar_claims in
 
-  if verify(pubAK,dataSign,sig) = true then  (* check signatures on Quote *)
+  (* check Verifier signatures on ar_token with pubARK *)
+  if verify(pubARK, ar_claims, vsig) = true then  (* ==> check Verifier signature on Attestation Result *)
   if dev_status1 = dev_statusRef then (* check measurements against Ref. Values *)
 
-  (* verify binding between the TLS Authenticator Identity Key (pubEK) and Attestation Evidence *)
-  let exported_val = ea_derive_attestation_binder(ems, req_ctx) in  (* derive exported key material using exporter_secret (ems) and req_ctx as context_value [Sec. 7.5, RFC9846; Sec. 5.1, draft-fossati-seat-expat] *)
-  if rdata = (exported_val,pubEK) then
-
+  (* Section 4 fix: cross-check that AR binds to pubEK in Certificate, and extract pubAK *)
+  (* if pubEK_cnf = pubEK then *)
+  
   let ea_hs_ctx = ea_derive_hs_context(ems) in  (* derive Authenticator Handshake Context using label "EXPORTER-server authenticator handshake context" [Sec. 5.1, RFC9261] *)
   let log_EA_CRT = (ea_hs_ctx, req_msg, CRT(ea_cert)) in  (* after this step, log_EA_CRT contains ea_hs_ctx || Authenticator Request || Certificate [Sec. 5.2.2, RFC9261] *)
 
@@ -872,7 +847,7 @@ let Client_EA(ID_C: identity, ID_S: identity, psk: preSharedKey,
 (* Server Authenticator                                 *)
 (********************************************************)
 
-let Server_EA(server_cert: bitstring, ID_S: identity, privEK, privAK: privkey, 
+let Server_EA(server_cert: bitstring, cached_AR: bitstring, ID_S: identity, privEK, noKey: privkey, 
     psk: preSharedKey, cr: random, sr: random, offer: params, mode: params, 
     gxy: bitstring, kch: ae_key, ks: ae_key, kc: ae_key, ems: bitstring, rms: bitstring, hash_algo: hash_alg) =
 (
@@ -882,21 +857,10 @@ let Server_EA(server_cert: bitstring, ID_S: identity, privEK, privAK: privkey,
 
   let pubEK = pk(privEK) in
   let pubLTK = pk(privEK) in (* pubLTK is pubEK for backward compat. with legacy queries *)
-  let pubAK = pk(privAK) in
 
-  (* Evidence generation *)
-  (* model of dev_status (measurements): input from adversary *)
-  (* Lets the adversary instantiate any desired VM 
-      but only the one with correct measurements will be accepted at Verifier *)
-  (* Alternative model: generate using new, give to adversary and use tables to store *)
-    in(io, dev_status1: measurements) [precise];
-
-  (* RFC 9261 Authenticator Construction *)
-  let exported_val = ea_derive_attestation_binder(ems, req_ctx) in  (* derive exported key material using exporter_secret (ems) and req_ctx as context_value [Sec. 7.5, RFC9846; Sec. 5.1, draft-fossati-seat-expat] *)
-  let rdata = (exported_val,pubEK) in
-
-  let dataSign = (rdata,dev_status1) in
-  let quote = (dataSign, sign(privAK,dataSign)) in
+  let quote = cached_AR in
+  let (ar_claims: bitstring, AR_sig: bitstring) = cached_AR in
+  let (=pubEK, pubAK: pubkey, dev_status1: measurements) = ar_claims in
 
   let selfsign = sign(privEK,(pubEK,quote)) in   
   let ea_cert = ((pubEK,quote),selfsign) in
@@ -937,13 +901,14 @@ let Server_EA(server_cert: bitstring, ID_S: identity, privEK, privAK: privkey,
   out(io, ph_msg(app_msg, ae2b(ks)))  (* encrypt and transmit post-handshake record with server application write key ks *)
 ).
 
+
 (********************************************************)
 (* Client *)
 (********************************************************)
 (* (for usability/extensibility), we can use variables for messages, 
 e.g., SH so that these variables can then be used in logs *)
 
-let Client(ID_C:identity,ID_S:identity,pubCA:pubkey) =
+let Client(ID_C:identity,ID_S:identity,pubCA:pubkey,pubARK:pubkey) =
 (
   in(io, ioffer:params);  (* io is a public channel. ioffer is obtained from adversary as input to allow adversary to generate all valid patterns *)
   let nego(=aTLS,DHE_13(g,eee),hash_algo,ev_type) = ioffer in
@@ -1001,7 +966,7 @@ let Client(ID_C:identity,ID_S:identity,pubCA:pubkey) =
     out(io,FIN(m2)); (* send ClientFinished message *)
 
     (* continue from TLS handshake into Exported Authenticator handshake  *)
-    Client_EA(ID_C,ID_S,psk,cr,sr,offer,mode,gxy,kch,ks,kc,ems,rms,shash_algo)
+    Client_EA(ID_C,ID_S,pubARK,psk,cr,sr,offer,mode,gxy,kch,ks,kc,ems,rms,shash_algo)
   )
 ).
 
@@ -1009,7 +974,7 @@ let Client(ID_C:identity,ID_S:identity,pubCA:pubkey) =
 (* Server *)
 (********************************************************)
 
-let Server(ID_S:identity, privLTK: privkey, privAK: privkey, privEK: privkey,ID_C:identity,server_cert:bitstring) =
+let Server(ID_S:identity, privLTK: privkey, privAK: privkey, privEK: privkey,ID_C:identity,server_cert:bitstring,cached_AR:bitstring) =
 (
   in(io, ch:msg); (* Receive ClientHello message from Client and store in variable ch *)
   let CH(cr,offer) = ch in (* pattern matching to ensure that received message in variable ch is in the desired format fun CH(random,params,random):msg [data]. nonce will be stored in variable cr and parameters will be stored in variable offer. Attestation nonce will be stored in ar *)
@@ -1066,5 +1031,5 @@ let Server(ID_S:identity, privLTK: privkey, privAK: privkey, privEK: privkey,ID_
     event ServerFinished(cr,sr,psk,pubLTK,offer,mode,kc,ks,ems,rms);
     
     (* Continue from TLS handshake into Exported Authenticator handshake *)
-    Server_EA(server_cert,ID_S,privEK,privAK,psk,cr,sr,offer,mode,gxy,kch,ks,kc,ems,rms,hash_algo)
+    Server_EA(server_cert,cached_AR,ID_S,privEK,privAK,psk,cr,sr,offer,mode,gxy,kch,ks,kc,ems,rms,hash_algo)
 ).

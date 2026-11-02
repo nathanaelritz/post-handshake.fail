@@ -23,7 +23,7 @@ The compromise of a server machine is modelled by leaking privAK or privLTK.
 (*    trust_store(ID_S    ,pubLTK,server_cert) *)
 table trust_store(identity,pubkey,bitstring).
 
-let gen_agents_data (privCA:privkey) = 
+let gen_agents_data (privCA:privkey, privARK:privkey) = 
   (* Imagine the following as generating the data of a single server machine (single agent)
   and the replication then produces multiple server machines (multi-agent) *)
 
@@ -53,10 +53,14 @@ let gen_agents_data (privCA:privkey) =
   new privEK: privkey;  (* VM key for TLS *)
 
   let pubEK = pk(privEK) in
-  out(io,pubEK);  
+  out(io,pubEK);
 
-  (* Record in the table *)
-  insert agent_keys(ID_S,privLTK,pubLTK,privAK,pubAK,privEK,pubEK)
+  (* Generate cached_AR, sign with Verifier's privARK and bind pubEK and pubAK to reference measurements *)
+  let ar_claims = (pubEK, pubAK, dev_statusRef) in
+  let AR_sig = sign(privARK, ar_claims) in
+  let cached_AR = (ar_claims, AR_sig) in
+
+  insert agent_keys(ID_S,privLTK,pubLTK,privAK,pubAK,privEK,pubEK,cached_AR)
 
   (* Alternative model: start a new phase and check the properties based on phases: attacker (...) phase n *)
   (* phase 1; *)
@@ -68,7 +72,7 @@ let gen_agents_data (privCA:privkey) =
   ))
 .
 
-let run_Client(pubCA:pubkey) = 
+let run_Client(pubCA:pubkey,pubARK:pubkey) = 
   (* Intuitively, the following models a single client (single agent) 
   and the replication takes care of multiple clients (multi agent) *)
   new ID_C:identity;  (* long-term identity of the client *)
@@ -77,51 +81,41 @@ let run_Client(pubCA:pubkey) =
   (! (* this allows the same client to talk to different servers *)
   (
   (* ID_S (=hostname/FQDN/SAN) is known to the client, e.g., the desired website it wants to connect. *)
-  get agent_keys(ID_S,_,_,_,_,_,_) in
+  get agent_keys(ID_S,_,_,_,_,_,_,_) in
 
   (* The following replication models multiple sessions of client with these parameters *)
-  !Client(ID_C,ID_S,pubCA)
+  !Client(ID_C,ID_S,pubCA,pubARK)
   ))
 .
 
 let run_Server = 
   (* Intuitively, this models a single server and the replication takes care of multiple servers *)
-  
-(* 
-(* Allow several combinations, but for each private key, choose the corresponding public key *)
-  get agent_keys(ID_S,_,_,_,_,_,_) in
-  get agent_keys(_,privLTK,pubLTK,_,_,_,_) in
-  get agent_keys(_,_,_,privAK,pubAK,_,_) in
-  get agent_keys(_,_,_,_,_,privEK,pubEK) in 
-*)
-
-  (* Alternatively, assume well configured server *)
-  get agent_keys(ID_S,privLTK,pubLTK,privAK,pubAK,privEK,pubEK) in 
+  get agent_keys(ID_S,privLTK,pubLTK,privAK,pubAK,privEK,pubEK,cached_AR) in 
 
   (* retrieve the cert matching the ID *)
   get trust_store(=ID_S,_,server_cert) in  
 
   (* The following replication models multiple sessions of server with these parameters *)
-  !Server(ID_S,privLTK,privAK,privEK,NULL_ID,server_cert)
+  !Server(ID_S,privLTK,privAK,privEK,NULL_ID,server_cert,cached_AR)
 .
 
 (* Mark the event when the keys of a specific machine are leaked
 i.e., not all server machines are compromised at the same time *)
 let LEK =
-  get agent_keys(_,_,_,_,_,privEK,pubEK) in 
+  get agent_keys(_,_,_,_,_,privEK,pubEK,_) in 
   event LeakedEK(pubEK);  (* mark the leakage of EK *)
   out(io, privEK)
 .
 
 let LAK =
-  get agent_keys(ID_S,_,pubLTK,privAK,pubAK,_,pubEK) in
+  get agent_keys(ID_S,_,pubLTK,privAK,pubAK,_,pubEK,_) in
   event LeakedAK(pubAK);  (* mark the leakage of AK *)  
   event LeakedAK2(ID_S,pubLTK,pubAK,pubEK);  (* mark the leakage of AK with additional parameters *)
   out(io, privAK)
 .
 
 let LLTK =
-  get agent_keys(_,privLTK,pubLTK,_,_,_,_) in
+  get agent_keys(_,privLTK,pubLTK,_,_,_,_,_) in
   event LeakedLTK(pubLTK);  (* mark the leakage of LTK *)  
   out(io, privLTK)
 .
@@ -141,8 +135,13 @@ process
   let pubCA = pk(privCA) in 
   out(io,pubCA);
 
-  !(gen_agents_data(privCA))
-  | !(run_Client(pubCA)) | !(run_Server)
+  (* Verifier Attestation signing Key *)
+  new privARK:privkey; 
+  let pubARK = pk(privARK) in 
+  out(io,pubARK); (* privARK never leaks *)
+
+  !(gen_agents_data(privCA, privARK))
+  | !(run_Client(pubCA,pubARK)) | !(run_Server)
 
   | !(LEK)
   | !(LLTK)
