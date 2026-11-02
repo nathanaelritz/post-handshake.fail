@@ -1,5 +1,8 @@
 # Proof of Insecurity of Post-handshake Attestation 🤷
 
+> [!NOTE]
+>  [draft-fossati-seat-expat-05](https://www.ietf.org/archive/id/draft-fossati-seat-expat-05.html#section-4-4.2.1) closes the gaps outlined in this report. However, the current language of -05 incidentally disqualifies the use of cached Attestation Results. This operational concern is a separate issue we expect will be resolved over time. The original report for `draft-fossati-seat-expat-04` is below.
+
 ### Impact analysis of draft-fossati-seat-expat-04
 
 This report details a critical specification flaw in [Section 4](https://www.ietf.org/archive/id/draft-fossati-seat-expat-04.html#section-4-4.2.1) of `draft-fossati-seat-expat-04` regarding the Passport Model. By omitting the requirement for the Relying Party to cross-check the Authenticator Identity Key (AIK) against the Attestation Result (AR), the current text completely breaks the cryptographic binding between the Attestation Credential and the TLS connection.
